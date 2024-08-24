@@ -1,0 +1,7 @@
+[package]
+name = "rusty_zigbee_dongle"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serialport = {git = "https://github.com/serialport/serialport-rs", rev="18f5c2ab5e2b08d839fd6dd0d4c5624778da593b"}
