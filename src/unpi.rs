@@ -7,13 +7,27 @@ pub struct Unpi {}
 /***     SOF(1) + Length(2/1) + Type/Sub(1) + Cmd(1) + Payload(N) + FCS(1)                     ***/
 /*************************************************************************************************/
 #[derive(Debug, PartialEq)]
-pub struct UnpiHeader<'a> {
+pub struct UnpiPacket<'a> {
     pub len: u16,
-    pub type_subsystem: MessageTypes,
-    pub command: u8,
+    pub type_subsystem: Subsystem,
+    pub command: (MessageType, CommandType),
     pub payload: &'a [u8],
     pub fcs: u8,
 }
+
+// #[derive(Debug, PartialEq)]
+// pub struct UnpiPacket<'a> {
+//     pub header: UnpiHeader<'a>,
+//     pub payload: &'a[u8]
+// }
+
+// impl<'a> UnpiPacket<'a> {
+//     pub fn to_bytes(&self, output: &mut [u8]) -> u8 {
+//         let len = self.header.to_bytes(output);
+//         output[len as usize..len as usize + self.payload.len()].copy_from_slice(self.payload);
+//         len as u8 + self.payload.len() as u8
+//     }
+// }
 
 #[derive(Debug, PartialEq)]
 pub enum UnpiHeaderError {
@@ -21,21 +35,30 @@ pub enum UnpiHeaderError {
     InvalidFcs,
     InvalidTypeSubsystem,
     Parse,
+    InvalidCommand,
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum MessageTypes {
+pub enum MessageType {
     SREQ,
     AREQ,
     SRESP,
+    RES0,
+    RES1,
+    RES2,
+    RES3,
 }
 
-impl Into<u8> for MessageTypes {
+impl Into<u8> for MessageType {
     fn into(self) -> u8 {
         match self {
-            MessageTypes::SREQ => 0,
-            MessageTypes::AREQ => 1,
-            MessageTypes::SRESP => 2,
+            MessageType::SREQ => 0,
+            MessageType::AREQ => 1,
+            MessageType::SRESP => 2,
+            MessageType::RES0 => 3,
+            MessageType::RES1 => 4,
+            MessageType::RES2 => 5,
+            MessageType::RES3 => 6,
         }
     }
 }
@@ -46,7 +69,7 @@ impl Unpi {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum CommandType {
     POLL,
     SREQ,
@@ -58,7 +81,7 @@ pub enum CommandType {
     RES3,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Subsystem {
     RpcSysRes0,
     RpcSysSys,
@@ -127,38 +150,127 @@ impl Into<u8> for CommandType {
     }
 }
 
-impl TryFrom<u8> for MessageTypes {
+impl Into<u8> for Subsystem {
+    fn into(self) -> u8 {
+        let r = match self {
+            Subsystem::RpcSysRes0 => 0,
+            Subsystem::RpcSysSys => 1,
+            Subsystem::RpcSysMac => 2,
+            Subsystem::RpcSysNwk => 3,
+            Subsystem::RpcSysAf => 4,
+            Subsystem::RpcSysZdo => 5,
+            Subsystem::RpcSysSapi => 6,
+            Subsystem::RpcSysUtil => 7,
+            Subsystem::RpcSysDbg => 8,
+            Subsystem::RpcSysApp => 9,
+            Subsystem::RpcSysRcaf => 10,
+            Subsystem::RpcSysRcn => 11,
+            Subsystem::RpcSysRcnClient => 12,
+            Subsystem::RpcSysBoot => 13,
+            Subsystem::RpcSysZiptest => 14,
+            Subsystem::RpcSysDebug => 15,
+            Subsystem::RpcSysPeripherals => 16,
+            Subsystem::RpcSysNfc => 17,
+            Subsystem::RpcSysPbNwkMgr => 18,
+            Subsystem::RpcSysPbGw => 19,
+            Subsystem::RpcSysPbOtaMgr => 20,
+            Subsystem::RpcSysBleSpnp => 21,
+            Subsystem::RpcSysBleHci => 22,
+            Subsystem::RpcSysResv01 => 23,
+            Subsystem::RpcSysResv02 => 24,
+            Subsystem::RpcSysResv03 => 25,
+            Subsystem::RpcSysResv04 => 26,
+            Subsystem::RpcSysResv05 => 27,
+            Subsystem::RpcSysResv06 => 28,
+            Subsystem::RpcSysResv07 => 29,
+            Subsystem::RpcSysResv08 => 30,
+            Subsystem::RpcSysSrvCtr => 31,
+        };
+        r << 4
+    }
+}
+
+impl TryFrom<u8> for MessageType {
     type Error = UnpiHeaderError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(MessageTypes::SREQ),
-            1 => Ok(MessageTypes::AREQ),
-            2 => Ok(MessageTypes::SRESP),
+        match value & 0b0000_1111 {
+            0 => Ok(MessageType::SREQ),
+            1 => Ok(MessageType::AREQ),
+            2 => Ok(MessageType::SRESP),
+            3 => Ok(MessageType::RES0),
+            4 => Ok(MessageType::RES1),
+            5 => Ok(MessageType::RES2),
+            6 => Ok(MessageType::RES3),
             _ => Err(UnpiHeaderError::Parse),
         }
     }
 }
 
-impl<'a> TryFrom<&'a [u8]> for UnpiHeader<'a> {
+impl<'a> TryFrom<&'a [u8]> for UnpiPacket<'a> {
     type Error = UnpiHeaderError;
-    fn try_from(data: &'a [u8]) -> Result<UnpiHeader, Self::Error> {
-        Ok(UnpiHeader {
+    fn try_from(data: &'a [u8]) -> Result<UnpiPacket, Self::Error> {
+        Ok(UnpiPacket {
             len: u16::from_le_bytes([data[0], data[1]]),
-            type_subsystem: MessageTypes::try_from(data[2])
+            type_subsystem: Subsystem::try_from(data[2])
                 .map_err(|_| UnpiHeaderError::InvalidTypeSubsystem)?,
-            command: data[3],
+            command: Wrapped(data[3])
+                .try_into()
+                .map_err(|_| UnpiHeaderError::InvalidCommand)?,
             payload: &data[4..data.len() - 1],
             fcs: data[data.len() - 1],
         })
     }
 }
 
-impl<'a> UnpiHeader<'a> {
+struct Wrapped<T>(T);
+
+impl Into<Wrapped<u8>> for (MessageType, CommandType) {
+    fn into(self) -> Wrapped<u8> {
+        Wrapped(Into::<u8>::into(self.0) << 4 | Into::<u8>::into(self.1))
+    }
+}
+
+impl TryFrom<Wrapped<u8>> for (MessageType, CommandType) {
+    type Error = UnpiHeaderError;
+
+    fn try_from(value: Wrapped<u8>) -> Result<Self, Self::Error> {
+        let v = value.0;
+        let message_type = (v & 0b1111_0000) >> 4;
+        let command_type = v & 0b0000_1111;
+        Ok((
+            message_type.try_into()?,
+            command_type
+                .try_into()
+                .map_err(|_| UnpiHeaderError::InvalidCommand)?,
+        ))
+    }
+}
+
+impl<'a> UnpiPacket<'a> {
+    pub fn from_payload(
+        payload: &'a [u8],
+        type_subsystem: Subsystem,
+        command: (MessageType, CommandType),
+    ) -> UnpiPacket<'a> {
+        let h = UnpiPacket {
+            len: payload.len() as u16 + 3,
+            type_subsystem,
+            command,
+            payload,
+            fcs: 0,
+        };
+        let fcs = h.checksum();
+        UnpiPacket { fcs, ..h }
+    }
+
     pub fn to_bytes(&self, output: &mut [u8]) -> u8 {
         output[0..2].copy_from_slice(&self.len.to_le_bytes());
         output[2] = self.type_subsystem.clone().into();
-        output[3] = self.command;
+        output[3] = {
+            let u: Wrapped<u8> = TryInto::<Wrapped<u8>>::try_into(self.command.clone()).unwrap();
+            u.0
+        };
         output[4..4 + self.payload.len()].copy_from_slice(self.payload);
         output[4 + self.payload.len()] = self.fcs;
         4 + self.payload.len() as u8
@@ -188,7 +300,7 @@ impl TryFrom<u8> for Subsystem {
     type Error = ();
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
+        match value & 0b1111_0000 {
             0 => Ok(Subsystem::RpcSysRes0),
             1 => Ok(Subsystem::RpcSysSys),
             2 => Ok(Subsystem::RpcSysMac),
@@ -233,11 +345,11 @@ mod tests {
     #[test]
     pub fn test_unpi_header() {
         let data = [0xFEu8, 0x00, 0x05, 0x02, 0x04, 0x01, 0x02, 0x03, 0x04, 0x07];
-        let header = UnpiHeader::try_from(&data[1..]).unwrap();
-        let checksum = UnpiHeader::checksum_buffer(&data[1..data.len() - 1]);
+        let header = UnpiPacket::try_from(&data[1..]).unwrap();
+        let checksum = UnpiPacket::checksum_buffer(&data[1..data.len() - 1]);
         assert_eq!(header.len, 0x0500);
-        assert_eq!(header.type_subsystem, super::MessageTypes::SRESP);
-        assert_eq!(header.command, 0x04);
+        assert_eq!(header.type_subsystem, Subsystem::RpcSysRes0);
+        assert_eq!(header.command, (MessageType::SREQ, CommandType::RES0));
         assert_eq!(header.payload, &[0x01, 0x02, 0x03, 0x04]);
         assert_eq!(checksum, header.fcs);
         assert_eq!(header.fcs, 0x07);

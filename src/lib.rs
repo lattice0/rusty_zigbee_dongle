@@ -1,4 +1,8 @@
 pub mod unpi;
+pub mod serial;
+pub mod coordinator;
+#[cfg(feature="cc2531x")]
+pub mod cc253x;
 
 #[cfg(test)]
 mod tests {
