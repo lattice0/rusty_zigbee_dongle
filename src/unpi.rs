@@ -24,6 +24,13 @@ impl LenType {
             LenType::TwoByte(v) => v.to_le_bytes(),
         }
     }
+
+    pub fn byte_size(&self) -> usize {
+        match self {
+            LenType::OneByte(_) => 1,
+            LenType::TwoByte(_) => 2,
+        }
+    }
 }
 
 impl Into<usize> for LenType {
@@ -39,6 +46,15 @@ impl Into<usize> for LenType {
 pub enum LenTypes {
     OneByte,
     TwoByte,
+}
+
+impl LenTypes {
+    pub fn byte_size(&self) -> usize {
+        match self {
+            LenTypes::OneByte => 1,
+            LenTypes::TwoByte => 2,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -57,7 +73,7 @@ pub enum UnpiHeaderError {
     InvalidTypeSubsystem,
     Parse,
     InvalidCommand,
-    IoError
+    IoError,
 }
 
 impl From<std::io::Error> for UnpiHeaderError {
@@ -180,7 +196,6 @@ impl TryFrom<u8> for MessageType {
     type Error = UnpiHeaderError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        println!("message try from {:?}", value);
         match value {
             0 => Ok(MessageType::POLL),
             1 => Ok(MessageType::SREQ),
@@ -198,22 +213,24 @@ impl TryFrom<u8> for MessageType {
 impl<'a> TryFrom<(&'a [u8], LenTypes)> for UnpiPacket<'a> {
     type Error = UnpiHeaderError;
     fn try_from((data, len_type): (&[u8], LenTypes)) -> Result<UnpiPacket, Self::Error> {
-        println!("data[0] = {:?}, data[1] = {:?}", data[0], data[1]);
-        let cursor = Cursor::new(data);
-        let len: LenType = match len_type {
-            LenTypes::OneByte => LenType::OneByte(cursor.read(1)?),
-            LenTypes::TwoByte => LenType::TwoByte((data[0] as u16) << 5 | data[1] as u16),
+        let (len, data): (LenType, &[u8]) = match len_type {
+            LenTypes::OneByte => (LenType::OneByte(data[0]), &data[1..]),
+            LenTypes::TwoByte => (
+                LenType::TwoByte(u16::from_le_bytes(
+                    data[0..2].try_into().map_err(|_| UnpiHeaderError::Parse)?,
+                )),
+                &data[2..],
+            ),
         };
-        println!("len: {:?}", len);
         Ok(UnpiPacket {
             len,
-            type_subsystem: Wrapped(data[2])
+            type_subsystem: Wrapped(data[0])
                 .try_into()
                 .map_err(|_| UnpiHeaderError::InvalidTypeSubsystem)?,
-            command: data[3]
+            command: data[1]
                 .try_into()
                 .map_err(|_| UnpiHeaderError::InvalidCommand)?,
-            payload: &data[4..(4 + Into::<usize>::into(len))],
+            payload: &data[2..(2 + Into::<usize>::into(len))],
             fcs: data[data.len() - 1],
         })
     }
@@ -232,8 +249,8 @@ impl TryFrom<Wrapped<u8>> for (MessageType, Subsystem) {
 
     fn try_from(value: Wrapped<u8>) -> Result<Self, Self::Error> {
         let v = value.0;
-        let message_type = (v & 0b1110_0000) >> 5;
-        let subsystem = v & 0b0001_1111;
+        let message_type = (v & MESSAGE_TYPE_MASK) >> 5;
+        let subsystem = v & SUBSYSTEM_MASK;
         Ok((
             message_type.try_into()?,
             subsystem
@@ -263,25 +280,31 @@ impl<'a> UnpiPacket<'a> {
         UnpiPacket { fcs, ..h }
     }
 
-    pub fn to_bytes(&self, output: &mut [u8]) -> u8 {
-        match self.len {
-            LenType::OneByte(_) => output[0..1].copy_from_slice(&self.len.to_le_bytes()[0..1]),
-            LenType::TwoByte(_) => output[0..2].copy_from_slice(&self.len.to_le_bytes()),
-        }
-        output[2] = Into::<Wrapped<u8>>::into(self.type_subsystem.clone()).0;
-        output[3] = self.command.into();
-        output[4..4 + self.payload.len()].copy_from_slice(self.payload);
-        output[4 + self.payload.len()] = self.fcs;
-        4 + self.payload.len() as u8
+    pub fn to_bytes(&self, output: &mut [u8]) -> usize {
+        let output = match self.len {
+            LenType::OneByte(_) => {
+                output[0..1].copy_from_slice(&self.len.to_le_bytes()[0..1]);
+                &mut output[1..]
+            }
+            LenType::TwoByte(_) => {
+                output[0..2].copy_from_slice(&self.len.to_le_bytes());
+                &mut output[2..]
+            }
+        };
+        output[0] = Into::<Wrapped<u8>>::into(self.type_subsystem.clone()).0;
+        output[1] = self.command.into();
+        output[2..2 + self.payload.len()].copy_from_slice(self.payload);
+        output[3 + self.payload.len() - 1] = self.fcs;
+        self.len.byte_size() + 3 + self.payload.len()
     }
 
     #[allow(unused)]
     //https://github.com/Mr-Markus/unpi-net/blob/master/src/UnpiNet/Packet.cs
     //todo: test
-    pub fn checksum_buffer(buf1: &[u8]) -> u8 {
+    pub fn checksum_buffer(buf: &[u8]) -> u8 {
         let mut fcs: u8 = 0x00;
 
-        for &byte in buf1 {
+        for &byte in buf {
             fcs ^= byte;
         }
 
@@ -291,7 +314,7 @@ impl<'a> UnpiPacket<'a> {
     pub fn checksum(&self) -> u8 {
         let mut output = [0u8; MAX_FRAME_SIZE];
         let end = self.to_bytes(&mut output) as usize;
-        Self::checksum_buffer(&mut output[0..end])
+        Self::checksum_buffer(&mut output[0..(end - 1)])
     }
 }
 
@@ -343,15 +366,14 @@ mod tests {
 
     #[test]
     pub fn test_unpi_header() {
-        let data = [0xFEu8, 0x00, 0x05, 0x37, 0x04, 0x01, 0x02, 0x03, 0x04, 0x07];
-        let header = UnpiPacket::try_from((&data[..], LenTypes::TwoByte)).unwrap();
+        let data = [0xFEu8, 0x04, 0x00, 0x25, 0x04, 0x01, 0x02, 0x03, 0x04, 0x21];
+        let header = UnpiPacket::try_from((&data[1..], LenTypes::TwoByte)).unwrap();
         let checksum = UnpiPacket::checksum_buffer(&data[1..data.len() - 1]);
-        assert_eq!(header.len, LenType::TwoByte(0x05));
-        assert_eq!(header.type_subsystem, (MessageType::SREQ, Subsystem::Res0));
+        assert_eq!(header.len, LenType::TwoByte(0x04));
+        assert_eq!(header.type_subsystem, (MessageType::SREQ, Subsystem::Zdo));
         assert_eq!(header.command, 0x04);
         assert_eq!(header.payload, &[0x01, 0x02, 0x03, 0x04]);
         assert_eq!(checksum, header.fcs);
-        assert_eq!(header.fcs, 0x07);
         assert_eq!(checksum, header.checksum());
     }
 
