@@ -69,7 +69,7 @@ pub struct UnpiPacket<'a> {
 #[derive(Debug, PartialEq)]
 pub enum UnpiHeaderError {
     InvalidStartOfFrame,
-    InvalidFcs,
+    InvalidFcs((u8, u8)),
     InvalidTypeSubsystem,
     Parse,
     InvalidCommand,
@@ -222,7 +222,7 @@ impl<'a> TryFrom<(&'a [u8], LenTypes)> for UnpiPacket<'a> {
                 &data[2..],
             ),
         };
-        Ok(UnpiPacket {
+        let p = UnpiPacket {
             len,
             type_subsystem: Wrapped(data[0])
                 .try_into()
@@ -232,7 +232,13 @@ impl<'a> TryFrom<(&'a [u8], LenTypes)> for UnpiPacket<'a> {
                 .map_err(|_| UnpiHeaderError::InvalidCommand)?,
             payload: &data[2..(2 + Into::<usize>::into(len))],
             fcs: data[data.len() - 1],
-        })
+        };
+        let checksum = p.checksum();
+        if checksum == p.fcs {
+            Ok(p)
+        } else {
+            Err(UnpiHeaderError::InvalidFcs((p.fcs, checksum)))
+        }
     }
 }
 
@@ -368,11 +374,18 @@ mod tests {
 
     #[test]
     pub fn test_unpi_empty() {
-        let data = [0xFEu8, 0x00, 0x25, 0x37, 0x12, 0x01];
+        let data = [0xFEu8, 0x00, 0x25, 0x37, 0x12, 0x12];
         let header = UnpiPacket::try_from((&data[1..], LenTypes::OneByte)).unwrap();
         assert_eq!(header.type_subsystem, (MessageType::SREQ, Subsystem::Zdo));
         assert_eq!(header.command, 0x37);
         assert_eq!(header.payload.len(), 0);
+    }
+
+    #[test]
+    pub fn test_unpi_empty_wrong_checksum() {
+        let data = [0xFEu8, 0x00, 0x25, 0x37, 0x12, 0x01];
+        let header = UnpiPacket::try_from((&data[1..], LenTypes::OneByte));
+        assert_eq!(header, Err(UnpiHeaderError::InvalidFcs((0x01, 0x12))));
     }
 
     #[test]
