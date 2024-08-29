@@ -268,8 +268,8 @@ impl<'a> UnpiPacket<'a> {
     ) -> UnpiPacket<'a> {
         let h = UnpiPacket {
             len: match len_type {
-                LenTypes::OneByte => LenType::OneByte(payload.len() as u8 + 3),
-                LenTypes::TwoByte => LenType::TwoByte(payload.len() as u16 + 3),
+                LenTypes::OneByte => LenType::OneByte(payload.len() as u8),
+                LenTypes::TwoByte => LenType::TwoByte(payload.len() as u16),
             },
             type_subsystem,
             command,
@@ -364,8 +364,40 @@ impl TryFrom<u8> for Subsystem {
 mod tests {
     use super::*;
 
+    //some test cases from https://github.com/shimmeringbee/unpi/blob/main/frame_test.go
+
     #[test]
-    pub fn test_unpi_header() {
+    pub fn test_unpi_empty() {
+        let data = [0xFEu8, 0x00, 0x25, 0x37, 0x12, 0x01];
+        let header = UnpiPacket::try_from((&data[1..], LenTypes::OneByte)).unwrap();
+        assert_eq!(header.type_subsystem, (MessageType::SREQ, Subsystem::Zdo));
+        assert_eq!(header.command, 0x37);
+        assert_eq!(header.payload.len(), 0);
+    }
+
+    #[test]
+    pub fn test_unpi_payload() {
+        let data = [0xfe, 0x02, 0x25, 0x37, 0x55, 0xdd, 0x98];
+        let header = UnpiPacket::try_from((&data[1..], LenTypes::OneByte)).unwrap();
+        assert_eq!(header.type_subsystem, (MessageType::SREQ, Subsystem::Zdo));
+        assert_eq!(header.command, 0x37);
+        assert_eq!(header.payload, &[0x55, 0xdd]);
+    }
+
+    #[test]
+    pub fn test_unpi_to_bytes() {
+        let packet = UnpiPacket::from_payload(
+            (&[0x55u8, 0xdd], LenTypes::OneByte),
+            (MessageType::SREQ, Subsystem::Zdo),
+            0x37,
+        );
+        let mut output = [0u8; MAX_FRAME_SIZE];
+        let len = packet.to_bytes(&mut output);
+        assert_eq!(&output[0..len], &[0x02, 0x25, 0x37, 0x55, 0xdd, 0x98]);
+    }
+
+    #[test]
+    pub fn test_unpi_double_len() {
         let data = [0xFEu8, 0x04, 0x00, 0x25, 0x04, 0x01, 0x02, 0x03, 0x04, 0x21];
         let header = UnpiPacket::try_from((&data[1..], LenTypes::TwoByte)).unwrap();
         let checksum = UnpiPacket::checksum_buffer(&data[1..data.len() - 1]);
@@ -375,16 +407,5 @@ mod tests {
         assert_eq!(header.payload, &[0x01, 0x02, 0x03, 0x04]);
         assert_eq!(checksum, header.fcs);
         assert_eq!(checksum, header.checksum());
-    }
-
-    //https://github.com/shimmeringbee/unpi/blob/main/frame_test.go
-
-    #[test]
-    pub fn test_unpi_empty() {
-        let data = [0xFEu8, 0x00, 0x25, 0x37, 0x12, 0x01];
-        let header = UnpiPacket::try_from((&data[1..], LenTypes::OneByte)).unwrap();
-        assert_eq!(header.type_subsystem, (MessageType::SREQ, Subsystem::Zdo));
-        assert_eq!(header.command, 0x37);
-        assert_eq!(header.payload.len(), 0);
     }
 }
