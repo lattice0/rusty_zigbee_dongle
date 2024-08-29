@@ -1,4 +1,6 @@
 pub const MAX_FRAME_SIZE: usize = 255;
+const MESSAGE_TYPE_MASK: u8 = 0b1110_0000;
+const SUBSYSTEM_MASK: u8 = 0b0001_1111;
 
 pub struct Unpi {}
 
@@ -9,25 +11,11 @@ pub struct Unpi {}
 #[derive(Debug, PartialEq)]
 pub struct UnpiPacket<'a> {
     pub len: u16,
-    pub type_subsystem: Subsystem,
-    pub command: (MessageType, CommandType),
+    pub type_subsystem: (MessageType, Subsystem),
+    pub command: u8,
     pub payload: &'a [u8],
     pub fcs: u8,
 }
-
-// #[derive(Debug, PartialEq)]
-// pub struct UnpiPacket<'a> {
-//     pub header: UnpiHeader<'a>,
-//     pub payload: &'a[u8]
-// }
-
-// impl<'a> UnpiPacket<'a> {
-//     pub fn to_bytes(&self, output: &mut [u8]) -> u8 {
-//         let len = self.header.to_bytes(output);
-//         output[len as usize..len as usize + self.payload.len()].copy_from_slice(self.payload);
-//         len as u8 + self.payload.len() as u8
-//     }
-// }
 
 #[derive(Debug, PartialEq)]
 pub enum UnpiHeaderError {
@@ -40,6 +28,7 @@ pub enum UnpiHeaderError {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum MessageType {
+    POLL,
     SREQ,
     AREQ,
     SRESP,
@@ -51,15 +40,17 @@ pub enum MessageType {
 
 impl Into<u8> for MessageType {
     fn into(self) -> u8 {
-        match self {
-            MessageType::SREQ => 0,
-            MessageType::AREQ => 1,
-            MessageType::SRESP => 2,
-            MessageType::RES0 => 3,
-            MessageType::RES1 => 4,
-            MessageType::RES2 => 5,
-            MessageType::RES3 => 6,
-        }
+        let r = match self {
+            MessageType::POLL => 0,
+            MessageType::SREQ => 1,
+            MessageType::AREQ => 2,
+            MessageType::SRESP => 3,
+            MessageType::RES0 => 4,
+            MessageType::RES1 => 5,
+            MessageType::RES2 => 6,
+            MessageType::RES3 => 7,
+        };
+        r
     }
 }
 
@@ -70,123 +61,78 @@ impl Unpi {
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
-pub enum CommandType {
-    POLL,
-    SREQ,
-    AREQ,
-    SRSP,
-    RES0,
-    RES1,
-    RES2,
-    RES3,
-}
-
-#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Subsystem {
-    RpcSysRes0,
-    RpcSysSys,
-    RpcSysMac,
-    RpcSysNwk,
-    RpcSysAf,
-    RpcSysZdo,
-    RpcSysSapi,
-    RpcSysUtil,
-    RpcSysDbg,
-    RpcSysApp,
-    RpcSysRcaf,
-    RpcSysRcn,
-    RpcSysRcnClient,
-    RpcSysBoot,
-    RpcSysZiptest,
-    RpcSysDebug,
-    RpcSysPeripherals,
-    RpcSysNfc,
-    RpcSysPbNwkMgr,
-    RpcSysPbGw,
-    RpcSysPbOtaMgr,
-    RpcSysBleSpnp,
-    RpcSysBleHci,
-    RpcSysResv01,
-    RpcSysResv02,
-    RpcSysResv03,
-    RpcSysResv04,
-    RpcSysResv05,
-    RpcSysResv06,
-    RpcSysResv07,
-    RpcSysResv08,
-    RpcSysSrvCtr,
-}
-
-impl TryFrom<u8> for CommandType {
-    type Error = ();
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(CommandType::POLL),
-            1 => Ok(CommandType::SREQ),
-            2 => Ok(CommandType::AREQ),
-            3 => Ok(CommandType::SRSP),
-            4 => Ok(CommandType::RES0),
-            5 => Ok(CommandType::RES1),
-            6 => Ok(CommandType::RES2),
-            7 => Ok(CommandType::RES3),
-            _ => Err(()),
-        }
-    }
-}
-
-impl Into<u8> for CommandType {
-    fn into(self) -> u8 {
-        match self {
-            CommandType::POLL => 0,
-            CommandType::SREQ => 1,
-            CommandType::AREQ => 2,
-            CommandType::SRSP => 3,
-            CommandType::RES0 => 4,
-            CommandType::RES1 => 5,
-            CommandType::RES2 => 6,
-            CommandType::RES3 => 7,
-        }
-    }
+    Res0,
+    Sys,
+    Mac,
+    Nwk,
+    Af,
+    Zdo,
+    Sapi,
+    Util,
+    Dbg,
+    App,
+    Rcaf,
+    Rcn,
+    RcnClient,
+    Boot,
+    Ziptest,
+    Debug,
+    Peripherals,
+    Nfc,
+    PbNwkMgr,
+    PbGw,
+    PbOtaMgr,
+    BleSpnp,
+    BleHci,
+    Resv01,
+    Resv02,
+    Resv03,
+    Resv04,
+    Resv05,
+    Resv06,
+    Resv07,
+    Resv08,
+    SrvCtr,
 }
 
 impl Into<u8> for Subsystem {
     fn into(self) -> u8 {
         let r = match self {
-            Subsystem::RpcSysRes0 => 0,
-            Subsystem::RpcSysSys => 1,
-            Subsystem::RpcSysMac => 2,
-            Subsystem::RpcSysNwk => 3,
-            Subsystem::RpcSysAf => 4,
-            Subsystem::RpcSysZdo => 5,
-            Subsystem::RpcSysSapi => 6,
-            Subsystem::RpcSysUtil => 7,
-            Subsystem::RpcSysDbg => 8,
-            Subsystem::RpcSysApp => 9,
-            Subsystem::RpcSysRcaf => 10,
-            Subsystem::RpcSysRcn => 11,
-            Subsystem::RpcSysRcnClient => 12,
-            Subsystem::RpcSysBoot => 13,
-            Subsystem::RpcSysZiptest => 14,
-            Subsystem::RpcSysDebug => 15,
-            Subsystem::RpcSysPeripherals => 16,
-            Subsystem::RpcSysNfc => 17,
-            Subsystem::RpcSysPbNwkMgr => 18,
-            Subsystem::RpcSysPbGw => 19,
-            Subsystem::RpcSysPbOtaMgr => 20,
-            Subsystem::RpcSysBleSpnp => 21,
-            Subsystem::RpcSysBleHci => 22,
-            Subsystem::RpcSysResv01 => 23,
-            Subsystem::RpcSysResv02 => 24,
-            Subsystem::RpcSysResv03 => 25,
-            Subsystem::RpcSysResv04 => 26,
-            Subsystem::RpcSysResv05 => 27,
-            Subsystem::RpcSysResv06 => 28,
-            Subsystem::RpcSysResv07 => 29,
-            Subsystem::RpcSysResv08 => 30,
-            Subsystem::RpcSysSrvCtr => 31,
+            Subsystem::Res0 => 0,
+            Subsystem::Sys => 1,
+            Subsystem::Mac => 2,
+            Subsystem::Nwk => 3,
+            Subsystem::Af => 4,
+            Subsystem::Zdo => 5,
+            Subsystem::Sapi => 6,
+            Subsystem::Util => 7,
+            Subsystem::Dbg => 8,
+            Subsystem::App => 9,
+            Subsystem::Rcaf => 10,
+            Subsystem::Rcn => 11,
+            Subsystem::RcnClient => 12,
+            Subsystem::Boot => 13,
+            Subsystem::Ziptest => 14,
+            Subsystem::Debug => 15,
+            Subsystem::Peripherals => 16,
+            Subsystem::Nfc => 17,
+            Subsystem::PbNwkMgr => 18,
+            Subsystem::PbGw => 19,
+            Subsystem::PbOtaMgr => 20,
+            Subsystem::BleSpnp => 21,
+            Subsystem::BleHci => 22,
+            Subsystem::Resv01 => 23,
+            Subsystem::Resv02 => 24,
+            Subsystem::Resv03 => 25,
+            Subsystem::Resv04 => 26,
+            Subsystem::Resv05 => 27,
+            Subsystem::Resv06 => 28,
+            Subsystem::Resv07 => 29,
+            Subsystem::Resv08 => 30,
+            Subsystem::SrvCtr => 31,
         };
-        r << 4
+        r
     }
 }
 
@@ -194,14 +140,16 @@ impl TryFrom<u8> for MessageType {
     type Error = UnpiHeaderError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value & 0b0000_1111 {
-            0 => Ok(MessageType::SREQ),
-            1 => Ok(MessageType::AREQ),
-            2 => Ok(MessageType::SRESP),
-            3 => Ok(MessageType::RES0),
-            4 => Ok(MessageType::RES1),
-            5 => Ok(MessageType::RES2),
-            6 => Ok(MessageType::RES3),
+        println!("message try from {:?}", value);
+        match value {
+            0 => Ok(MessageType::POLL),
+            1 => Ok(MessageType::SREQ),
+            2 => Ok(MessageType::AREQ),
+            3 => Ok(MessageType::SRESP),
+            4 => Ok(MessageType::RES0),
+            5 => Ok(MessageType::RES1),
+            6 => Ok(MessageType::RES2),
+            7 => Ok(MessageType::RES3),
             _ => Err(UnpiHeaderError::Parse),
         }
     }
@@ -210,14 +158,18 @@ impl TryFrom<u8> for MessageType {
 impl<'a> TryFrom<&'a [u8]> for UnpiPacket<'a> {
     type Error = UnpiHeaderError;
     fn try_from(data: &'a [u8]) -> Result<UnpiPacket, Self::Error> {
+        println!("data[0] = {:?}, data[1] = {:?}", data[0], data[1]);
+        let len: u16 = (data[0] as u16) << 5 | data[1] as u16;
+        println!("len: {:?}", len);
         Ok(UnpiPacket {
-            len: u16::from_le_bytes([data[0], data[1]]),
-            type_subsystem: Subsystem::try_from(data[2])
+            len,
+            type_subsystem: Wrapped(data[2])
+                .try_into()
                 .map_err(|_| UnpiHeaderError::InvalidTypeSubsystem)?,
-            command: Wrapped(data[3])
+            command: data[3]
                 .try_into()
                 .map_err(|_| UnpiHeaderError::InvalidCommand)?,
-            payload: &data[4..data.len() - 1],
+            payload: &data[4..(4 + len as usize)],
             fcs: data[data.len() - 1],
         })
     }
@@ -225,24 +177,24 @@ impl<'a> TryFrom<&'a [u8]> for UnpiPacket<'a> {
 
 struct Wrapped<T>(T);
 
-impl Into<Wrapped<u8>> for (MessageType, CommandType) {
+impl Into<Wrapped<u8>> for (MessageType, Subsystem) {
     fn into(self) -> Wrapped<u8> {
-        Wrapped(Into::<u8>::into(self.0) << 4 | Into::<u8>::into(self.1))
+        Wrapped(Into::<u8>::into(self.0) << 5 | Into::<u8>::into(self.1))
     }
 }
 
-impl TryFrom<Wrapped<u8>> for (MessageType, CommandType) {
+impl TryFrom<Wrapped<u8>> for (MessageType, Subsystem) {
     type Error = UnpiHeaderError;
 
     fn try_from(value: Wrapped<u8>) -> Result<Self, Self::Error> {
         let v = value.0;
-        let message_type = (v & 0b1111_0000) >> 4;
-        let command_type = v & 0b0000_1111;
+        let message_type = (v & 0b1110_0000) >> 5;
+        let subsystem = v & 0b0001_1111;
         Ok((
             message_type.try_into()?,
-            command_type
+            subsystem
                 .try_into()
-                .map_err(|_| UnpiHeaderError::InvalidCommand)?,
+                .map_err(|_| UnpiHeaderError::InvalidTypeSubsystem)?,
         ))
     }
 }
@@ -250,8 +202,8 @@ impl TryFrom<Wrapped<u8>> for (MessageType, CommandType) {
 impl<'a> UnpiPacket<'a> {
     pub fn from_payload(
         payload: &'a [u8],
-        type_subsystem: Subsystem,
-        command: (MessageType, CommandType),
+        type_subsystem: (MessageType, Subsystem),
+        command: u8,
     ) -> UnpiPacket<'a> {
         let h = UnpiPacket {
             len: payload.len() as u16 + 3,
@@ -266,11 +218,8 @@ impl<'a> UnpiPacket<'a> {
 
     pub fn to_bytes(&self, output: &mut [u8]) -> u8 {
         output[0..2].copy_from_slice(&self.len.to_le_bytes());
-        output[2] = self.type_subsystem.clone().into();
-        output[3] = {
-            let u: Wrapped<u8> = TryInto::<Wrapped<u8>>::try_into(self.command.clone()).unwrap();
-            u.0
-        };
+        output[2] = Into::<Wrapped<u8>>::into(self.type_subsystem.clone()).0;
+        output[3] = self.command.into();
         output[4..4 + self.payload.len()].copy_from_slice(self.payload);
         output[4 + self.payload.len()] = self.fcs;
         4 + self.payload.len() as u8
@@ -300,39 +249,39 @@ impl TryFrom<u8> for Subsystem {
     type Error = ();
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value & 0b1111_0000 {
-            0 => Ok(Subsystem::RpcSysRes0),
-            1 => Ok(Subsystem::RpcSysSys),
-            2 => Ok(Subsystem::RpcSysMac),
-            3 => Ok(Subsystem::RpcSysNwk),
-            4 => Ok(Subsystem::RpcSysAf),
-            5 => Ok(Subsystem::RpcSysZdo),
-            6 => Ok(Subsystem::RpcSysSapi),
-            7 => Ok(Subsystem::RpcSysUtil),
-            8 => Ok(Subsystem::RpcSysDbg),
-            9 => Ok(Subsystem::RpcSysApp),
-            10 => Ok(Subsystem::RpcSysRcaf),
-            11 => Ok(Subsystem::RpcSysRcn),
-            12 => Ok(Subsystem::RpcSysRcnClient),
-            13 => Ok(Subsystem::RpcSysBoot),
-            14 => Ok(Subsystem::RpcSysZiptest),
-            15 => Ok(Subsystem::RpcSysDebug),
-            16 => Ok(Subsystem::RpcSysPeripherals),
-            17 => Ok(Subsystem::RpcSysNfc),
-            18 => Ok(Subsystem::RpcSysPbNwkMgr),
-            19 => Ok(Subsystem::RpcSysPbGw),
-            20 => Ok(Subsystem::RpcSysPbOtaMgr),
-            21 => Ok(Subsystem::RpcSysBleSpnp),
-            22 => Ok(Subsystem::RpcSysBleHci),
-            23 => Ok(Subsystem::RpcSysResv01),
-            24 => Ok(Subsystem::RpcSysResv02),
-            25 => Ok(Subsystem::RpcSysResv03),
-            26 => Ok(Subsystem::RpcSysResv04),
-            27 => Ok(Subsystem::RpcSysResv05),
-            28 => Ok(Subsystem::RpcSysResv06),
-            29 => Ok(Subsystem::RpcSysResv07),
-            30 => Ok(Subsystem::RpcSysResv08),
-            31 => Ok(Subsystem::RpcSysSrvCtr),
+        match value & SUBSYSTEM_MASK {
+            0 => Ok(Subsystem::Res0),
+            1 => Ok(Subsystem::Sys),
+            2 => Ok(Subsystem::Mac),
+            3 => Ok(Subsystem::Nwk),
+            4 => Ok(Subsystem::Af),
+            5 => Ok(Subsystem::Zdo),
+            6 => Ok(Subsystem::Sapi),
+            7 => Ok(Subsystem::Util),
+            8 => Ok(Subsystem::Dbg),
+            9 => Ok(Subsystem::App),
+            10 => Ok(Subsystem::Rcaf),
+            11 => Ok(Subsystem::Rcn),
+            12 => Ok(Subsystem::RcnClient),
+            13 => Ok(Subsystem::Boot),
+            14 => Ok(Subsystem::Ziptest),
+            15 => Ok(Subsystem::Debug),
+            16 => Ok(Subsystem::Peripherals),
+            17 => Ok(Subsystem::Nfc),
+            18 => Ok(Subsystem::PbNwkMgr),
+            19 => Ok(Subsystem::PbGw),
+            20 => Ok(Subsystem::PbOtaMgr),
+            21 => Ok(Subsystem::BleSpnp),
+            22 => Ok(Subsystem::BleHci),
+            23 => Ok(Subsystem::Resv01),
+            24 => Ok(Subsystem::Resv02),
+            25 => Ok(Subsystem::Resv03),
+            26 => Ok(Subsystem::Resv04),
+            27 => Ok(Subsystem::Resv05),
+            28 => Ok(Subsystem::Resv06),
+            29 => Ok(Subsystem::Resv07),
+            30 => Ok(Subsystem::Resv08),
+            31 => Ok(Subsystem::SrvCtr),
             _ => Err(()),
         }
     }
@@ -344,15 +293,26 @@ mod tests {
 
     #[test]
     pub fn test_unpi_header() {
-        let data = [0xFEu8, 0x00, 0x05, 0x02, 0x04, 0x01, 0x02, 0x03, 0x04, 0x07];
-        let header = UnpiPacket::try_from(&data[1..]).unwrap();
+        let data = [0xFEu8, 0x00, 0x05, 0x37, 0x04, 0x01, 0x02, 0x03, 0x04, 0x07];
+        let header = UnpiPacket::try_from(&data[..]).unwrap();
         let checksum = UnpiPacket::checksum_buffer(&data[1..data.len() - 1]);
-        assert_eq!(header.len, 0x0500);
-        assert_eq!(header.type_subsystem, Subsystem::RpcSysRes0);
-        assert_eq!(header.command, (MessageType::SREQ, CommandType::RES0));
+        assert_eq!(header.len, 5);
+        assert_eq!(header.type_subsystem, (MessageType::SREQ, Subsystem::Res0));
+        assert_eq!(header.command, 0x04);
         assert_eq!(header.payload, &[0x01, 0x02, 0x03, 0x04]);
         assert_eq!(checksum, header.fcs);
         assert_eq!(header.fcs, 0x07);
         assert_eq!(checksum, header.checksum());
+    }
+
+    //https://github.com/shimmeringbee/unpi/blob/main/frame_test.go
+
+    #[test]
+    pub fn test_unpi_empty() {
+        let data = [0xFEu8, 0x00, 0x25, 0x37, 0x12, 0x01];
+        let header = UnpiPacket::try_from(&data[1..]).unwrap();
+        assert_eq!(header.type_subsystem, (MessageType::SREQ, Subsystem::Zdo));
+        assert_eq!(header.command, 0x37);
+        assert_eq!(header.payload.len(), 0);
     }
 }

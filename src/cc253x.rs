@@ -1,6 +1,6 @@
 use crate::{
-    coordinator::{Coordinator, CoordinatorError},
-    unpi::{CommandType, MessageType, Subsystem, UnpiPacket},
+    coordinator::{Coordinator, CoordinatorError, LedStatus, ResetType},
+    unpi::{MessageType, Subsystem, UnpiPacket},
 };
 use serialport::SerialPort;
 use std::{path::PathBuf, time::Duration};
@@ -8,6 +8,7 @@ use std::{path::PathBuf, time::Duration};
 const MAXIMUM_ZIGBEE_PAYLOAD_SIZE: usize = 255;
 
 pub struct CC2531X {
+    supports_led: Option<bool>,
     serial: Box<dyn SerialPort>,
 }
 
@@ -17,7 +18,10 @@ impl CC2531X {
             .timeout(Duration::from_millis(10))
             .open()
             .map_err(|e| CoordinatorError::SerialOpen(e.to_string()))?;
-        Ok(Self { serial })
+        Ok(Self {
+            serial,
+            supports_led: None,
+        })
     }
 }
 
@@ -29,11 +33,11 @@ impl Coordinator for CC2531X {
 
     type IeeAddress = ieee802154::mac::Address;
 
-    fn start(&self) -> Result<(), crate::coordinator::CoordinatorError> {
+    fn start(&self) -> Result<(), CoordinatorError> {
         todo!()
     }
 
-    fn stop(&self) -> Result<(), crate::coordinator::CoordinatorError> {
+    fn stop(&self) -> Result<(), CoordinatorError> {
         todo!()
     }
 
@@ -41,25 +45,33 @@ impl Coordinator for CC2531X {
         &self,
         address: u16,
         duration: std::time::Duration,
-    ) -> Result<(), crate::coordinator::CoordinatorError> {
+    ) -> Result<(), CoordinatorError> {
         todo!()
     }
 
-    fn reset(
-        &self,
-        reset_type: crate::coordinator::ResetType,
-    ) -> Result<(), crate::coordinator::CoordinatorError> {
+    fn reset(&self, reset_type: ResetType) -> Result<(), CoordinatorError> {
         todo!()
     }
 
-    fn set_led(
-        &self,
-        led_status: crate::coordinator::LedStatus,
-    ) -> Result<(), crate::coordinator::CoordinatorError> {
-        todo!()
+    fn set_led(&self, led_status: LedStatus) -> Result<(), CoordinatorError> {
+        // if (self.supports_led == None) {
+        //     // Only zStack3x0 with 20210430 and greater support LED
+        //     const zStack3x0 = this.version.product === ZnpVersion.zStack3x0;
+        //     self.supports_led = !zStack3x0 || (zStack3x0 && parseInt(self.version.revision) >= 20210430);
+        // }
+        let payload: &[u8] = todo!();
+        let unpi_header = UnpiPacket::from_payload(
+            payload,
+            (MessageType::SREQ, Subsystem::Util),
+            10,
+        );
+        let buffer: &[u8] = todo!();
+        self.serial
+            .write_all(buffer)
+            .map_err(|e| CoordinatorError::SerialWrite(e.to_string()))?;
     }
 
-    fn request_network_address(addr: &str) -> Result<(), crate::coordinator::CoordinatorError> {
+    fn request_network_address(addr: &str) -> Result<(), CoordinatorError> {
         todo!()
     }
 
@@ -73,12 +85,12 @@ impl Coordinator for CC2531X {
         disable_response: bool,
         disable_recovery: bool,
         source_endpoint: Option<u32>,
-    ) -> Result<Option<Self::ZclPayload<'static>>, crate::coordinator::CoordinatorError> {
+    ) -> Result<Option<Self::ZclPayload<'static>>, CoordinatorError> {
         let payload: &[u8] = todo!();
         let unpi_header = UnpiPacket::from_payload(
             payload,
-            Subsystem::RpcSysAf,
-            (MessageType::SREQ, CommandType::SREQ),
+            (MessageType::SREQ, Subsystem::Af),
+            0x00,
         );
         let buffer: &[u8] = todo!();
         self.serial
