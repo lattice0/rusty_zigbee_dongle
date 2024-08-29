@@ -1,6 +1,6 @@
 use crate::{
     coordinator::{Coordinator, CoordinatorError, LedStatus, ResetType},
-    unpi::{MessageType, Subsystem, UnpiPacket},
+    unpi::{LenType, LenTypes, MessageType, Subsystem, UnpiPacket},
 };
 use serialport::SerialPort;
 use std::{path::PathBuf, time::Duration};
@@ -61,7 +61,7 @@ impl Coordinator for CC2531X {
         // }
         let payload: &[u8] = todo!();
         let unpi_header = UnpiPacket::from_payload(
-            payload,
+            (payload, LenTypes::OneByte),
             (MessageType::SREQ, Subsystem::Util),
             10,
         );
@@ -88,7 +88,7 @@ impl Coordinator for CC2531X {
     ) -> Result<Option<Self::ZclPayload<'static>>, CoordinatorError> {
         let payload: &[u8] = todo!();
         let unpi_header = UnpiPacket::from_payload(
-            payload,
+            (payload, LenTypes::OneByte),
             (MessageType::SREQ, Subsystem::Af),
             0x00,
         );
