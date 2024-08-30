@@ -1,9 +1,10 @@
-use std::io::Write;
+use std::io::{self, Read, Write};
 
 pub mod commands;
 
 pub const START_OF_FRAME: u8 = 0xFE;
 pub const MAX_FRAME_SIZE: usize = 255;
+pub const MAX_PAYLOAD_SIZE: usize = 255;
 const MESSAGE_TYPE_MASK: u8 = 0b1110_0000;
 const SUBSYSTEM_MASK: u8 = 0b0001_1111;
 
@@ -20,6 +21,8 @@ pub struct UnpiPacket<'a> {
     pub payload: &'a [u8],
     pub fcs: u8,
 }
+
+struct Wrapped<T>(T);
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum LenType {
@@ -67,6 +70,48 @@ impl LenTypeInfo {
         }
     }
 }
+
+impl<'a> Wrapped<&'a [u8]> {
+    pub fn read_u8(&mut self) -> Result<u8, std::io::Error> {
+        let mut buffer = [0u8; 1];
+        self.0.read_exact(&mut buffer[..])?;
+        Ok(buffer[0])
+    }
+
+    pub fn read_u16_be(&mut self) -> Result<u16, std::io::Error> {
+        let mut buffer = [0u8; 2];
+        self.0.read_exact(&mut buffer)?;
+        Ok(u16::from_be_bytes(buffer))
+    }
+
+    pub fn read_u16_le(&mut self) -> Result<u16, std::io::Error> {
+        let mut buffer = [0u8; 2];
+        self.0.read_exact(&mut buffer)?;
+        Ok(u16::from_le_bytes(buffer))
+    }
+
+    pub fn read_exact(&mut self, output: &mut [u8]) -> Result<(), std::io::Error> {
+        self.0.read_exact(output)
+    }
+
+    pub fn subslice_exact(&mut self, len: usize) -> Result<&'a [u8], std::io::Error> {
+        let (left, right) = self.0.split_at_checked(len).ok_or(std::io::Error::new(
+            io::ErrorKind::InvalidData,
+            "split at error",
+        ))?;
+        self.0 = right;
+        Ok(left)
+    }
+}
+
+// impl<'a> Wrapped<&'a mut [u8]> {
+//     pub fn subslice_exact(&mut self, len: usize) -> Result<&'a [u8], std::io::Error> {
+//         let (left, right) = self.0.split_at_mut(len);
+//         self.0.read_exact(left);
+//         self.0 = right;
+//         todo!()
+//     }
+// }
 
 #[derive(Debug, PartialEq)]
 pub enum UnpiPacketError {
@@ -210,28 +255,34 @@ impl<'a> TryFrom<(&'a [u8], LenTypeInfo)> for UnpiPacket<'a> {
 
     /// Type safe constructor for UnpiPacket with dependence of len_type_info
     fn try_from((data, len_type_info): (&[u8], LenTypeInfo)) -> Result<UnpiPacket, Self::Error> {
-        if data[0] != START_OF_FRAME {
-            return Err(UnpiPacketError::InvalidStartOfFrame(data[0]));
+        let mut data = Wrapped(data);
+        let sof = data.read_u8()?;
+        if sof != START_OF_FRAME {
+            return Err(UnpiPacketError::InvalidStartOfFrame(sof));
         }
-        let (len, data): (LenType, &[u8]) = match len_type_info {
-            LenTypeInfo::OneByte => (LenType::OneByte(data[1]), &data[2..]),
-            LenTypeInfo::TwoByte => (
-                LenType::TwoByte(u16::from_le_bytes(
-                    data[1..3].try_into().map_err(|_| UnpiPacketError::Parse)?,
-                )),
-                &data[3..],
-            ),
+        let len = match len_type_info {
+            LenTypeInfo::OneByte => LenType::OneByte(data.read_u8()?),
+            LenTypeInfo::TwoByte => LenType::TwoByte(data.read_u16_le()?),
         };
+        println!("len: {:x?}", len);
+        let type_subsystem = data.read_u8()?;
+        println!("type_subsystem: {:x?}", type_subsystem);
+        let command = data.read_u8()?;
+        println!("command: {:x?}", command);
+        let payload = data.subslice_exact(len.byte_size())?;
+        println!("payload: {:x?}", payload);
+        let fcs = data.read_u8()?;
+        println!("fcs: {:x?}", fcs);
         let p = UnpiPacket {
             len,
-            type_subsystem: Wrapped(data[0])
+            type_subsystem: Wrapped(type_subsystem)
                 .try_into()
-                .map_err(|_| UnpiPacketError::InvalidTypeSubsystem(data[0]))?,
-            command: data[1]
+                .map_err(|_| UnpiPacketError::InvalidTypeSubsystem(type_subsystem))?,
+            command: command
                 .try_into()
                 .map_err(|_| UnpiPacketError::InvalidCommand)?,
-            payload: &data[2..(2 + Into::<usize>::into(len))],
-            fcs: data[data.len() - 1],
+            payload: &payload[0..len.byte_size()],
+            fcs,
         };
         let checksum = p.checksum()?;
         if checksum == p.fcs {
@@ -241,8 +292,6 @@ impl<'a> TryFrom<(&'a [u8], LenTypeInfo)> for UnpiPacket<'a> {
         }
     }
 }
-
-struct Wrapped<T>(T);
 
 impl Into<Wrapped<u8>> for (MessageType, Subsystem) {
     fn into(self) -> Wrapped<u8> {
@@ -315,6 +364,8 @@ impl<'a> UnpiPacket<'a> {
     pub fn checksum(&self) -> Result<u8, std::io::Error> {
         let mut output: &mut [u8] = &mut [0u8; MAX_FRAME_SIZE];
         let len = self.to_bytes(&mut output)?;
+        println!("output bytes: {:x?}", output);
+        println!("checksum bytes: {:x?}", &output[1..(len - 1)]);
         Ok(Self::checksum_buffer(&output[1..(len - 1)]))
     }
 }
@@ -411,7 +462,7 @@ mod tests {
         .unwrap();
         let output = &mut [0u8; MAX_FRAME_SIZE];
         let len = packet.to_bytes(&mut output.as_mut()).unwrap();
-        assert_eq!(&output[0..len], &[0xFE, 0x02, 0x25, 0x37, 0x55, 0xdd, 0x98]);
+        assert_eq!(&output[0..len+], &[0xFE, 0x02, 0x25, 0x37, 0x55, 0xdd, 0x98]);
     }
 
     #[test]
