@@ -38,10 +38,18 @@ impl LenType {
         }
     }
 
+    /// How many bytes it takes to store
     pub fn byte_size(&self) -> usize {
         match self {
             LenType::OneByte(_) => 1,
             LenType::TwoByte(_) => 2,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            LenType::OneByte(v) => *v as usize,
+            LenType::TwoByte(v) => *v as usize,
         }
     }
 }
@@ -264,15 +272,10 @@ impl<'a> TryFrom<(&'a [u8], LenTypeInfo)> for UnpiPacket<'a> {
             LenTypeInfo::OneByte => LenType::OneByte(data.read_u8()?),
             LenTypeInfo::TwoByte => LenType::TwoByte(data.read_u16_le()?),
         };
-        println!("len: {:x?}", len);
         let type_subsystem = data.read_u8()?;
-        println!("type_subsystem: {:x?}", type_subsystem);
         let command = data.read_u8()?;
-        println!("command: {:x?}", command);
-        let payload = data.subslice_exact(len.byte_size())?;
-        println!("payload: {:x?}", payload);
+        let payload = data.subslice_exact(len.len())?;
         let fcs = data.read_u8()?;
-        println!("fcs: {:x?}", fcs);
         let p = UnpiPacket {
             len,
             type_subsystem: Wrapped(type_subsystem)
@@ -281,7 +284,7 @@ impl<'a> TryFrom<(&'a [u8], LenTypeInfo)> for UnpiPacket<'a> {
             command: command
                 .try_into()
                 .map_err(|_| UnpiPacketError::InvalidCommand)?,
-            payload: &payload[0..len.byte_size()],
+            payload,
             fcs,
         };
         let checksum = p.checksum()?;
@@ -364,8 +367,6 @@ impl<'a> UnpiPacket<'a> {
     pub fn checksum(&self) -> Result<u8, std::io::Error> {
         let mut output: &mut [u8] = &mut [0u8; MAX_FRAME_SIZE];
         let len = self.to_bytes(&mut output)?;
-        println!("output bytes: {:x?}", output);
-        println!("checksum bytes: {:x?}", &output[1..(len - 1)]);
         Ok(Self::checksum_buffer(&output[1..(len - 1)]))
     }
 }
@@ -420,7 +421,7 @@ mod tests {
 
     #[test]
     pub fn test_unpi_empty() {
-        let data = [0xFEu8, 0x00, 0x25, 0x37, 0x12, 0x12];
+        let data = [0xFEu8, 0x00, 0x25, 0x37, 0x12];
         let packet = UnpiPacket::try_from((&data[..], LenTypeInfo::OneByte)).unwrap();
         assert_eq!(packet.type_subsystem, (MessageType::SREQ, Subsystem::Zdo));
         assert_eq!(packet.command, 0x37);
@@ -429,7 +430,7 @@ mod tests {
 
     #[test]
     pub fn test_unpi_empty_wrong_checksum() {
-        let data = [0xFEu8, 0x00, 0x25, 0x37, 0x12, 0x01];
+        let data = [0xFEu8, 0x00, 0x25, 0x37, 0x01];
         let packet = UnpiPacket::try_from((&data[..], LenTypeInfo::OneByte));
         assert_eq!(packet, Err(UnpiPacketError::InvalidFcs((0x01, 0x12))));
     }
@@ -462,7 +463,7 @@ mod tests {
         .unwrap();
         let output = &mut [0u8; MAX_FRAME_SIZE];
         let len = packet.to_bytes(&mut output.as_mut()).unwrap();
-        assert_eq!(&output[0..len+], &[0xFE, 0x02, 0x25, 0x37, 0x55, 0xdd, 0x98]);
+        assert_eq!(&output[0..len], &[0xFE, 0x02, 0x25, 0x37, 0x55, 0xdd, 0x98]);
     }
 
     #[test]
