@@ -43,4 +43,5 @@ pub enum ResetType {
 pub enum CoordinatorError {
     SerialOpen(String),
     SerialWrite(String),
+    NoCommandWithName
 }

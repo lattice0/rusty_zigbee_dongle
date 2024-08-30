@@ -1,7 +1,10 @@
+use std::io::Write;
+
+pub mod commands;
+
 pub const MAX_FRAME_SIZE: usize = 255;
 const MESSAGE_TYPE_MASK: u8 = 0b1110_0000;
 const SUBSYSTEM_MASK: u8 = 0b0001_1111;
-
 
 /*************************************************************************************************/
 /*** TI Unified NPI Packet Format                                                              ***/
@@ -49,25 +52,26 @@ impl Into<usize> for LenType {
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
-pub enum LenTypes {
+pub enum LenTypeInfo {
     OneByte,
     TwoByte,
 }
 
-impl LenTypes {
+impl LenTypeInfo {
+    /// How many bytes are used to represent the length
     pub fn byte_size(&self) -> usize {
         match self {
-            LenTypes::OneByte => 1,
-            LenTypes::TwoByte => 2,
+            LenTypeInfo::OneByte => 1,
+            LenTypeInfo::TwoByte => 2,
         }
     }
 }
 
 #[derive(Debug, PartialEq)]
 pub enum UnpiHeaderError {
-    InvalidStartOfFrame,
+    InvalidStartOfFrame(u8),
     InvalidFcs((u8, u8)),
-    InvalidTypeSubsystem,
+    InvalidTypeSubsystem(u8),
     Parse,
     InvalidCommand,
     IoError,
@@ -199,12 +203,14 @@ impl TryFrom<u8> for MessageType {
     }
 }
 
-impl<'a> TryFrom<(&'a [u8], LenTypes)> for UnpiPacket<'a> {
+impl<'a> TryFrom<(&'a [u8], LenTypeInfo)> for UnpiPacket<'a> {
     type Error = UnpiHeaderError;
-    fn try_from((data, len_type): (&[u8], LenTypes)) -> Result<UnpiPacket, Self::Error> {
-        let (len, data): (LenType, &[u8]) = match len_type {
-            LenTypes::OneByte => (LenType::OneByte(data[0]), &data[1..]),
-            LenTypes::TwoByte => (
+
+    /// Type safe constructor for UnpiPacket with dependence of len_type_info
+    fn try_from((data, len_type_info): (&[u8], LenTypeInfo)) -> Result<UnpiPacket, Self::Error> {
+        let (len, data): (LenType, &[u8]) = match len_type_info {
+            LenTypeInfo::OneByte => (LenType::OneByte(data[0]), &data[1..]),
+            LenTypeInfo::TwoByte => (
                 LenType::TwoByte(u16::from_le_bytes(
                     data[0..2].try_into().map_err(|_| UnpiHeaderError::Parse)?,
                 )),
@@ -215,14 +221,14 @@ impl<'a> TryFrom<(&'a [u8], LenTypes)> for UnpiPacket<'a> {
             len,
             type_subsystem: Wrapped(data[0])
                 .try_into()
-                .map_err(|_| UnpiHeaderError::InvalidTypeSubsystem)?,
+                .map_err(|_| UnpiHeaderError::InvalidTypeSubsystem(data[0]))?,
             command: data[1]
                 .try_into()
                 .map_err(|_| UnpiHeaderError::InvalidCommand)?,
             payload: &data[2..(2 + Into::<usize>::into(len))],
             fcs: data[data.len() - 1],
         };
-        let checksum = p.checksum();
+        let checksum = p.checksum()?;
         if checksum == p.fcs {
             Ok(p)
         } else {
@@ -250,52 +256,46 @@ impl TryFrom<Wrapped<u8>> for (MessageType, Subsystem) {
             message_type.try_into()?,
             subsystem
                 .try_into()
-                .map_err(|_| UnpiHeaderError::InvalidTypeSubsystem)?,
+                .map_err(|_| UnpiHeaderError::InvalidTypeSubsystem(v))?,
         ))
     }
 }
 
 impl<'a> UnpiPacket<'a> {
     pub fn from_payload(
-        (payload, len_type): (&'a [u8], LenTypes),
+        (payload, len_type_info): (&'a [u8], LenTypeInfo),
         type_subsystem: (MessageType, Subsystem),
         command: u8,
-    ) -> UnpiPacket<'a> {
+    ) -> Result<UnpiPacket<'a>, std::io::Error> {
         let h = UnpiPacket {
-            len: match len_type {
-                LenTypes::OneByte => LenType::OneByte(payload.len() as u8),
-                LenTypes::TwoByte => LenType::TwoByte(payload.len() as u16),
+            len: match len_type_info {
+                LenTypeInfo::OneByte => LenType::OneByte(payload.len() as u8),
+                LenTypeInfo::TwoByte => LenType::TwoByte(payload.len() as u16),
             },
             type_subsystem,
             command,
             payload,
             fcs: 0,
         };
-        let fcs = h.checksum();
-        UnpiPacket { fcs, ..h }
+        let fcs = h.checksum()?;
+        Ok(UnpiPacket { fcs, ..h })
     }
 
-    pub fn to_bytes(&self, output: &mut [u8]) -> usize {
-        let output = match self.len {
-            LenType::OneByte(_) => {
-                output[0..1].copy_from_slice(&self.len.to_le_bytes()[0..1]);
-                &mut output[1..]
-            }
-            LenType::TwoByte(_) => {
-                output[0..2].copy_from_slice(&self.len.to_le_bytes());
-                &mut output[2..]
-            }
+    pub fn to_bytes(&self, output: &mut &mut [u8]) -> Result<usize, std::io::Error> {
+        let len = output.len();
+        match self.len {
+            LenType::OneByte(_) => output.write_all(&self.len.to_le_bytes()[0..1])?,
+            LenType::TwoByte(_) => output.write_all(&self.len.to_le_bytes())?,
         };
-        output[0] = Into::<Wrapped<u8>>::into(self.type_subsystem.clone()).0;
-        output[1] = self.command.into();
-        output[2..2 + self.payload.len()].copy_from_slice(self.payload);
-        output[3 + self.payload.len() - 1] = self.fcs;
-        self.len.byte_size() + 3 + self.payload.len()
+        output.write_all(&[Into::<Wrapped<u8>>::into(self.type_subsystem.clone()).0])?;
+        output.write_all(&[self.command.into()])?;
+        output.write_all(self.payload)?;
+        output.write_all(&[self.fcs])?;
+        Ok(len - output.len())
     }
 
     #[allow(unused)]
     //https://github.com/Mr-Markus/unpi-net/blob/master/src/UnpiNet/Packet.cs
-    //todo: test
     pub fn checksum_buffer(buf: &[u8]) -> u8 {
         let mut fcs: u8 = 0x00;
 
@@ -306,10 +306,10 @@ impl<'a> UnpiPacket<'a> {
         fcs
     }
 
-    pub fn checksum(&self) -> u8 {
-        let mut output = [0u8; MAX_FRAME_SIZE];
-        let end = self.to_bytes(&mut output) as usize;
-        Self::checksum_buffer(&mut output[0..(end - 1)])
+    pub fn checksum(&self) -> Result<u8, std::io::Error> {
+        let mut output: &mut [u8] = &mut [0u8; MAX_FRAME_SIZE];
+        let len = self.to_bytes(&mut output)?;
+        Ok(Self::checksum_buffer(&output[0..(len - 1)]))
     }
 }
 
@@ -364,7 +364,7 @@ mod tests {
     #[test]
     pub fn test_unpi_empty() {
         let data = [0xFEu8, 0x00, 0x25, 0x37, 0x12, 0x12];
-        let packet = UnpiPacket::try_from((&data[1..], LenTypes::OneByte)).unwrap();
+        let packet = UnpiPacket::try_from((&data[1..], LenTypeInfo::OneByte)).unwrap();
         assert_eq!(packet.type_subsystem, (MessageType::SREQ, Subsystem::Zdo));
         assert_eq!(packet.command, 0x37);
         assert_eq!(packet.payload.len(), 0);
@@ -373,14 +373,14 @@ mod tests {
     #[test]
     pub fn test_unpi_empty_wrong_checksum() {
         let data = [0xFEu8, 0x00, 0x25, 0x37, 0x12, 0x01];
-        let packet = UnpiPacket::try_from((&data[1..], LenTypes::OneByte));
+        let packet = UnpiPacket::try_from((&data[1..], LenTypeInfo::OneByte));
         assert_eq!(packet, Err(UnpiHeaderError::InvalidFcs((0x01, 0x12))));
     }
 
     #[test]
     pub fn test_unpi_payload() {
         let data = [0xfe, 0x02, 0x25, 0x37, 0x55, 0xdd, 0x98];
-        let packet = UnpiPacket::try_from((&data[1..], LenTypes::OneByte)).unwrap();
+        let packet = UnpiPacket::try_from((&data[1..], LenTypeInfo::OneByte)).unwrap();
         assert_eq!(packet.type_subsystem, (MessageType::SREQ, Subsystem::Zdo));
         assert_eq!(packet.command, 0x37);
         assert_eq!(packet.payload, &[0x55, 0xdd]);
@@ -389,50 +389,51 @@ mod tests {
     #[test]
     pub fn test_unpi_payload_to_from_bytes() {
         let data = [0xfe, 0x02, 0x25, 0x37, 0x55, 0xdd, 0x98];
-        let packet = UnpiPacket::try_from((&data[1..], LenTypes::OneByte)).unwrap();
-        let mut output = [0u8; MAX_FRAME_SIZE];
-        let len = packet.to_bytes(&mut output);
-        assert_eq!(&data[1..], &output[0..len])
+        let packet = UnpiPacket::try_from((&data[1..], LenTypeInfo::OneByte)).unwrap();
+        let mut output: &mut [u8] = &mut [0u8; MAX_FRAME_SIZE];
+        let len = packet.to_bytes(&mut output).unwrap();
+        assert_eq!(&output[0..len], &data[1..]);
     }
 
     #[test]
     pub fn test_unpi_to_bytes() {
         let packet = UnpiPacket::from_payload(
-            (&[0x55u8, 0xdd], LenTypes::OneByte),
+            (&[0x55u8, 0xdd], LenTypeInfo::OneByte),
             (MessageType::SREQ, Subsystem::Zdo),
             0x37,
-        );
-        let mut output = [0u8; MAX_FRAME_SIZE];
-        let len = packet.to_bytes(&mut output);
+        )
+        .unwrap();
+        let output = &mut [0u8; MAX_FRAME_SIZE];
+        let len = packet.to_bytes(&mut output.as_mut()).unwrap();
         assert_eq!(&output[0..len], &[0x02, 0x25, 0x37, 0x55, 0xdd, 0x98]);
     }
 
     #[test]
     pub fn test_unpi_double_len() {
         let data = [0xFEu8, 0x04, 0x00, 0x25, 0x04, 0x01, 0x02, 0x03, 0x04, 0x21];
-        let packet = UnpiPacket::try_from((&data[1..], LenTypes::TwoByte)).unwrap();
+        let packet = UnpiPacket::try_from((&data[1..], LenTypeInfo::TwoByte)).unwrap();
         let checksum = UnpiPacket::checksum_buffer(&data[1..data.len() - 1]);
         assert_eq!(packet.len, LenType::TwoByte(0x04));
         assert_eq!(packet.type_subsystem, (MessageType::SREQ, Subsystem::Zdo));
         assert_eq!(packet.command, 0x04);
         assert_eq!(packet.payload, &[0x01, 0x02, 0x03, 0x04]);
         assert_eq!(checksum, packet.fcs);
-        assert_eq!(checksum, packet.checksum());
+        assert_eq!(checksum, packet.checksum().unwrap());
     }
 
     #[test]
     pub fn test_unpi_double_len_wrong_checksum() {
         let data = [0xFEu8, 0x04, 0x00, 0x25, 0x04, 0x01, 0x02, 0x03, 0x04, 0x02];
-        let packet = UnpiPacket::try_from((&data[1..], LenTypes::TwoByte));
+        let packet = UnpiPacket::try_from((&data[1..], LenTypeInfo::TwoByte));
         assert_eq!(packet, Err(UnpiHeaderError::InvalidFcs((0x02, 0x21))));
     }
 
     #[test]
     pub fn test_unpi_double_len_to_from_bytes() {
         let data = [0xFEu8, 0x04, 0x00, 0x25, 0x04, 0x01, 0x02, 0x03, 0x04, 0x21];
-        let packet = UnpiPacket::try_from((&data[1..], LenTypes::TwoByte)).unwrap();
-        let mut output = [0u8; MAX_FRAME_SIZE];
-        let len = packet.to_bytes(&mut output);
-        assert_eq!(&data[1..], &output[0..len])
+        let packet = UnpiPacket::try_from((&data[1..], LenTypeInfo::TwoByte)).unwrap();
+        let mut output: &mut [u8] = &mut [0u8; MAX_FRAME_SIZE];
+        let len = packet.to_bytes(&mut output).unwrap();
+        assert_eq!(&output[0..len], &data[1..])
     }
 }

@@ -1,6 +1,8 @@
 use crate::{
     coordinator::{Coordinator, CoordinatorError, LedStatus, ResetType},
-    unpi::{LenType, LenTypes, MessageType, Subsystem, UnpiPacket},
+    unpi::{
+        commands::get_command_by_name, LenType, LenTypeInfo, MessageType, Subsystem, UnpiPacket,
+    },
 };
 use serialport::SerialPort;
 use std::{path::PathBuf, time::Duration};
@@ -59,11 +61,13 @@ impl Coordinator for CC2531X {
         //     const zStack3x0 = this.version.product === ZnpVersion.zStack3x0;
         //     self.supports_led = !zStack3x0 || (zStack3x0 && parseInt(self.version.revision) >= 20210430);
         // }
+        let command = get_command_by_name(&Subsystem::Util, "led_control")
+            .ok_or(CoordinatorError::NoCommandWithName)?;
         let payload: &[u8] = todo!();
         let unpi_header = UnpiPacket::from_payload(
-            (payload, LenTypes::OneByte),
+            (payload, LenTypeInfo::OneByte),
             (MessageType::SREQ, Subsystem::Util),
-            10,
+            command.id,
         );
         let buffer: &[u8] = todo!();
         self.serial
@@ -88,7 +92,7 @@ impl Coordinator for CC2531X {
     ) -> Result<Option<Self::ZclPayload<'static>>, CoordinatorError> {
         let payload: &[u8] = todo!();
         let unpi_header = UnpiPacket::from_payload(
-            (payload, LenTypes::OneByte),
+            (payload, LenTypeInfo::OneByte),
             (MessageType::SREQ, Subsystem::Af),
             0x00,
         );
