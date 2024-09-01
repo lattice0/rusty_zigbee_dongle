@@ -15,6 +15,7 @@ pub trait Coordinator {
     fn reset(&self, reset_type: ResetType) -> Result<(), CoordinatorError>;
     fn set_led(&mut self, led_status: LedStatus) -> Result<(), CoordinatorError>;
     fn change_channel(&mut self, channel: u8) -> Result<(), CoordinatorError>;
+    fn set_transmit_power(&mut self, power: i8) -> Result<(), CoordinatorError>;
     fn request_network_address(addr: &str) -> Result<(), CoordinatorError>;
     fn send_zcl_frame<'a>(
         &self,
@@ -48,7 +49,8 @@ pub enum CoordinatorError {
     SerialWrite(String),
     NoCommandWithName,
     Io(String),
-    Parameter(ParameterError)
+    Parameter(ParameterError),
+    InvalidChannel
 }
 
 impl From<std::io::Error> for CoordinatorError {

@@ -49,6 +49,7 @@ pub enum ParameterType {
     U8,
     U16,
     U32,
+    I8,
 }
 
 #[derive(Debug, PartialEq)]
@@ -56,6 +57,7 @@ pub enum ParameterValue {
     U8(u8),
     U16(u16),
     U32(u32),
+    I8(i8),
 }
 
 impl PartialEq<ParameterType> for ParameterValue {
@@ -64,6 +66,7 @@ impl PartialEq<ParameterType> for ParameterValue {
             ParameterValue::U8(_) => other == &ParameterType::U8,
             ParameterValue::U16(_) => other == &ParameterType::U16,
             ParameterValue::U32(_) => other == &ParameterType::U32,
+            ParameterValue::I8(_) => other == &ParameterType::I8,
         }
     }
 }
@@ -82,6 +85,8 @@ impl ParameterValue {
             ParameterValue::U8(v) => output.write_all(&[*v])?,
             ParameterValue::U16(v) => output.write_all(&v.to_le_bytes())?,
             ParameterValue::U32(v) => output.write_all(&v.to_le_bytes())?,
+            //TODO: i8 to u8?
+            ParameterValue::I8(v) => output.write_all(&[*v as u8])?,
         }
         Ok(len - output.len())
     }
@@ -90,6 +95,7 @@ impl ParameterValue {
 pub const SUBSYSTEMS: &[(Subsystem, &[Command])] = &[
     (Subsystem::Util, COMMANDS_UTIL),
     (Subsystem::Zdo, COMMANDS_ZDO),
+    (Subsystem::Sys, COMMANDS_SYS),
 ];
 
 pub fn get_command_by_name(subsystem: &Subsystem, name: &str) -> Option<&'static Command> {
@@ -115,7 +121,7 @@ pub const COMMANDS_UTIL: &[Command] = &[Command {
 }];
 
 pub const COMMANDS_ZDO: &[Command] = &[Command {
-    name: "mgmtNwkUpdateReq",
+    name: "management_network_update_request",
     id: 55, // TODO: 0x0038 => 56?? (from zStackAdapter.ts)
     command_type: MessageType::SREQ,
     request: Map::new(&[
@@ -129,6 +135,16 @@ pub const COMMANDS_ZDO: &[Command] = &[Command {
     response: Map::new(&[("status", ParameterType::U8)]),
 }];
 
+pub const COMMANDS_SYS: &[Command] = &[Command {
+    name: "stack_tune",
+    id: 15,
+    command_type: MessageType::SREQ,
+    request: Map::new(&[
+        ("operation", ParameterType::U8),
+        ("value", ParameterType::I8),
+    ]),
+    response: Map::new(&[("value", ParameterType::U8)]),
+}];
 
 #[derive(Debug)]
 pub enum ParameterError {

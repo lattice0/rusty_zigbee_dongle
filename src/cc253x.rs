@@ -9,6 +9,7 @@ use crate::{
 use serialport::SerialPort;
 use std::{path::PathBuf, time::Duration};
 
+//TODO: fix this
 const MAXIMUM_ZIGBEE_PAYLOAD_SIZE: usize = 255;
 
 pub struct CC2531X {
@@ -107,7 +108,10 @@ impl Coordinator for CC2531X {
             (
                 "channel_mask",
                 ParameterValue::U32(
-                    [channel].into_iter().reduce(|a, c| a + (1 << c)).unwrap() as u32, //TODO: very likely wrong
+                    [channel]
+                        .into_iter()
+                        .reduce(|a, c| a + (1 << c))
+                        .ok_or(CoordinatorError::InvalidChannel)? as u32, //TODO: very likely wrong
                 ),
             ),
             ("scan_duration", ParameterValue::U8(0xfe)),
@@ -115,7 +119,7 @@ impl Coordinator for CC2531X {
             ("nwk_manager_addr", ParameterValue::U16(0)),
         ];
 
-        let command = get_command_by_name(&Subsystem::Zdo, "set_channel")
+        let command = get_command_by_name(&Subsystem::Zdo, "mgmtNwkUpdateReq")
             .ok_or(CoordinatorError::NoCommandWithName)?;
         UnpiPacket::from_command_to_serial(
             command.id,
@@ -125,6 +129,24 @@ impl Coordinator for CC2531X {
             &mut *self.serial,
         )?;
 
+        Ok(())
+    }
+
+    fn set_transmit_power(&mut self, power: i8) -> Result<(), CoordinatorError> {
+        let parameters = &[
+            ("operation", ParameterValue::U8(0)),
+            ("value", ParameterValue::I8(power)),
+        ];
+
+        let command = get_command_by_name(&Subsystem::Zdo, "stack_tune")
+            .ok_or(CoordinatorError::NoCommandWithName)?;
+        UnpiPacket::from_command_to_serial(
+            command.id,
+            command,
+            parameters,
+            (MessageType::SREQ, Subsystem::Zdo),
+            &mut *self.serial,
+        )?;
         Ok(())
     }
 
