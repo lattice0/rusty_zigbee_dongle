@@ -1,7 +1,8 @@
 use crate::{
     coordinator::{Coordinator, CoordinatorError, LedStatus, ResetType},
     unpi::{
-        commands::get_command_by_name, LenType, LenTypeInfo, MessageType, Subsystem, UnpiPacket,
+        commands::{get_command_by_name, ParameterValue},
+        LenType, LenTypeInfo, MessageType, Subsystem, UnpiPacket,
     },
 };
 use serialport::SerialPort;
@@ -55,24 +56,50 @@ impl Coordinator for CC2531X {
         todo!()
     }
 
-    fn set_led(&self, led_status: LedStatus) -> Result<(), CoordinatorError> {
-        // if (self.supports_led == None) {
-        //     // Only zStack3x0 with 20210430 and greater support LED
-        //     const zStack3x0 = this.version.product === ZnpVersion.zStack3x0;
-        //     self.supports_led = !zStack3x0 || (zStack3x0 && parseInt(self.version.revision) >= 20210430);
-        // }
+    fn set_led(&mut self, led_status: LedStatus) -> Result<(), CoordinatorError> {
         let command = get_command_by_name(&Subsystem::Util, "led_control")
             .ok_or(CoordinatorError::NoCommandWithName)?;
-        let payload: &[u8] = todo!();
-        let unpi_header = UnpiPacket::from_payload(
+        //TODO:
+        //const firmwareControlsLed = parseInt(this.version.revision) >= 20211029;
+        let firmware_controls_led = true;
+        let parameters = match led_status {
+            LedStatus::Disable => {
+                if firmware_controls_led {
+                    &[
+                        ("led_id", ParameterValue::U8(0xff)),
+                        ("mode", ParameterValue::U8(0)),
+                    ]
+                } else {
+                    &[
+                        ("led_id", ParameterValue::U8(3)),
+                        ("mode", ParameterValue::U8(0)),
+                    ]
+                }
+            }
+            LedStatus::On => &[
+                ("led_id", ParameterValue::U8(3)),
+                ("mode", ParameterValue::U8(1)),
+            ],
+            LedStatus::Off => &[
+                ("led_id", ParameterValue::U8(3)),
+                ("mode", ParameterValue::U8(0)),
+            ],
+        };
+        let mut payload_buffer = [0u8; 4];
+        let written = command.fill_and_write(parameters, &mut payload_buffer)?;
+        let payload: &[u8] = &payload_buffer[0..written];
+
+        let mut unpi_packet_buffer = [0u8; 256];
+        let unpi_packet = UnpiPacket::from_payload(
             (payload, LenTypeInfo::OneByte),
             (MessageType::SREQ, Subsystem::Util),
             command.id,
-        );
-        let buffer: &[u8] = todo!();
+        )?;
+        let written = unpi_packet.to_bytes(&mut unpi_packet_buffer)?;
         self.serial
-            .write_all(buffer)
+            .write_all(&unpi_packet_buffer[0..written])
             .map_err(|e| CoordinatorError::SerialWrite(e.to_string()))?;
+        Ok(())
     }
 
     fn request_network_address(addr: &str) -> Result<(), CoordinatorError> {
@@ -103,34 +130,3 @@ impl Coordinator for CC2531X {
         Ok(None)
     }
 }
-/*
-        const transactionID = this.nextTransactionID();
-        const response = this.znp.waitFor(Type.AREQ, Subsystem.AF, 'dataConfirm', {transid: transactionID}, timeout);
-
-        await this.znp.request(
-            Subsystem.AF,
-            'dataRequest',
-            {
-                dstaddr: destinationAddress,
-                destendpoint: destinationEndpoint,
-                srcendpoint: sourceEndpoint,
-                clusterid: clusterID,
-                transid: transactionID,
-                options: 0,
-                radius: radius,
-                len: data.length,
-                data: data,
-            },
-            response.ID,
-        );
-
-        let result = null;
-        try {
-            const dataConfirm = await response.start().promise;
-            result = dataConfirm.payload.status;
-        } catch {
-            result = DataConfirmTimeout;
-        }
-
-        return result;
-*/

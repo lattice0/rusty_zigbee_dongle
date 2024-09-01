@@ -1,3 +1,5 @@
+use crate::unpi::commands::ParameterError;
+
 pub trait Coordinator {
     type ZclFrame;
     type ZclPayload<'a>;
@@ -11,7 +13,7 @@ pub trait Coordinator {
         duration: std::time::Duration,
     ) -> Result<(), CoordinatorError>;
     fn reset(&self, reset_type: ResetType) -> Result<(), CoordinatorError>;
-    fn set_led(&self, led_status: LedStatus) -> Result<(), CoordinatorError>;
+    fn set_led(&mut self, led_status: LedStatus) -> Result<(), CoordinatorError>;
     fn request_network_address(addr: &str) -> Result<(), CoordinatorError>;
     fn send_zcl_frame<'a>(
         &self,
@@ -43,5 +45,19 @@ pub enum ResetType {
 pub enum CoordinatorError {
     SerialOpen(String),
     SerialWrite(String),
-    NoCommandWithName
+    NoCommandWithName,
+    Io(String),
+    Parameter(ParameterError)
+}
+
+impl From<std::io::Error> for CoordinatorError {
+    fn from(e: std::io::Error) -> Self {
+        CoordinatorError::Io(e.to_string())
+    }
+}
+
+impl From<ParameterError> for CoordinatorError {
+    fn from(e: ParameterError) -> Self {
+        CoordinatorError::Parameter(e)
+    }
 }

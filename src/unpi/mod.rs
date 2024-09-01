@@ -112,15 +112,6 @@ impl<'a> Wrapped<&'a [u8]> {
     }
 }
 
-// impl<'a> Wrapped<&'a mut [u8]> {
-//     pub fn subslice_exact(&mut self, len: usize) -> Result<&'a [u8], std::io::Error> {
-//         let (left, right) = self.0.split_at_mut(len);
-//         self.0.read_exact(left);
-//         self.0 = right;
-//         todo!()
-//     }
-// }
-
 #[derive(Debug, PartialEq)]
 pub enum UnpiPacketError {
     InvalidStartOfFrame(u8),
