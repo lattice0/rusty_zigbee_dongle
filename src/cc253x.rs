@@ -2,8 +2,9 @@ use crate::{
     coordinator::{Coordinator, CoordinatorError, LedStatus, ResetType},
     unpi::{
         commands::{get_command_by_name, ParameterValue},
-        LenType, LenTypeInfo, MessageType, Subsystem, UnpiPacket,
+        LenTypeInfo, MessageType, Subsystem, UnpiPacket,
     },
+    AddressMode,
 };
 use serialport::SerialPort;
 use std::{path::PathBuf, time::Duration};
@@ -59,8 +60,7 @@ impl Coordinator for CC2531X {
     fn set_led(&mut self, led_status: LedStatus) -> Result<(), CoordinatorError> {
         let command = get_command_by_name(&Subsystem::Util, "led_control")
             .ok_or(CoordinatorError::NoCommandWithName)?;
-        //TODO:
-        //const firmwareControlsLed = parseInt(this.version.revision) >= 20211029;
+        //TODO: const firmwareControlsLed = parseInt(this.version.revision) >= 20211029;
         let firmware_controls_led = true;
         let parameters = match led_status {
             LedStatus::Disable => {
@@ -85,20 +85,46 @@ impl Coordinator for CC2531X {
                 ("mode", ParameterValue::U8(0)),
             ],
         };
-        let mut payload_buffer = [0u8; 4];
-        let written = command.fill_and_write(parameters, &mut payload_buffer)?;
-        let payload: &[u8] = &payload_buffer[0..written];
 
-        let mut unpi_packet_buffer = [0u8; 256];
-        let unpi_packet = UnpiPacket::from_payload(
-            (payload, LenTypeInfo::OneByte),
-            (MessageType::SREQ, Subsystem::Util),
+        UnpiPacket::from_command_to_serial(
             command.id,
+            command,
+            parameters,
+            (MessageType::SREQ, Subsystem::Util),
+            &mut *self.serial,
         )?;
-        let written = unpi_packet.to_bytes(&mut unpi_packet_buffer)?;
-        self.serial
-            .write_all(&unpi_packet_buffer[0..written])
-            .map_err(|e| CoordinatorError::SerialWrite(e.to_string()))?;
+
+        Ok(())
+    }
+
+    fn change_channel(&mut self, channel: u8) -> Result<(), CoordinatorError> {
+        let parameters = &[
+            ("dst_addr", ParameterValue::U16(0xffff)),
+            (
+                "dst_addr_mode",
+                ParameterValue::U16(AddressMode::AddrBroadcast as u16),
+            ),
+            (
+                "channel_mask",
+                ParameterValue::U32(
+                    [channel].into_iter().reduce(|a, c| a + (1 << c)).unwrap() as u32, //TODO: very likely wrong
+                ),
+            ),
+            ("scan_duration", ParameterValue::U8(0xfe)),
+            ("scan_count", ParameterValue::U8(0)),
+            ("nwk_manager_addr", ParameterValue::U16(0)),
+        ];
+
+        let command = get_command_by_name(&Subsystem::Zdo, "set_channel")
+            .ok_or(CoordinatorError::NoCommandWithName)?;
+        UnpiPacket::from_command_to_serial(
+            command.id,
+            command,
+            parameters,
+            (MessageType::SREQ, Subsystem::Zdo),
+            &mut *self.serial,
+        )?;
+
         Ok(())
     }
 

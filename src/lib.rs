@@ -1,9 +1,17 @@
 pub mod unpi;
-pub mod serial;
 pub mod coordinator;
 pub mod utils;
 #[cfg(feature="cc2531x")]
 pub mod cc253x;
+pub mod serial;
+
+pub enum AddressMode {
+    AddrNotPresent = 0,
+    AddrGroup = 1,
+    Addr16bit = 2,
+    Addr64bit = 3,
+    AddrBroadcast = 15,
+}
 
 #[cfg(test)]
 mod tests {

@@ -14,6 +14,7 @@ pub trait Coordinator {
     ) -> Result<(), CoordinatorError>;
     fn reset(&self, reset_type: ResetType) -> Result<(), CoordinatorError>;
     fn set_led(&mut self, led_status: LedStatus) -> Result<(), CoordinatorError>;
+    fn change_channel(&mut self, channel: u8) -> Result<(), CoordinatorError>;
     fn request_network_address(addr: &str) -> Result<(), CoordinatorError>;
     fn send_zcl_frame<'a>(
         &self,

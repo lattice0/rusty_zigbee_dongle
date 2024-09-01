@@ -1,4 +1,6 @@
 use std::io::{self, Read, Write};
+use commands::ParameterValue;
+use crate::coordinator::{Coordinator, CoordinatorError};
 
 pub mod commands;
 

@@ -48,12 +48,14 @@ impl Command {
 pub enum ParameterType {
     U8,
     U16,
+    U32,
 }
 
 #[derive(Debug, PartialEq)]
 pub enum ParameterValue {
     U8(u8),
     U16(u16),
+    U32(u32),
 }
 
 impl PartialEq<ParameterType> for ParameterValue {
@@ -61,6 +63,7 @@ impl PartialEq<ParameterType> for ParameterValue {
         match self {
             ParameterValue::U8(_) => other == &ParameterType::U8,
             ParameterValue::U16(_) => other == &ParameterType::U16,
+            ParameterValue::U32(_) => other == &ParameterType::U32,
         }
     }
 }
@@ -78,12 +81,16 @@ impl ParameterValue {
         match self {
             ParameterValue::U8(v) => output.write_all(&[*v])?,
             ParameterValue::U16(v) => output.write_all(&v.to_le_bytes())?,
+            ParameterValue::U32(v) => output.write_all(&v.to_le_bytes())?,
         }
         Ok(len - output.len())
     }
 }
 
-pub const SUBSYSTEMS: &[(Subsystem, &[Command])] = &[(Subsystem::Util, COMMANDS_UTIL)];
+pub const SUBSYSTEMS: &[(Subsystem, &[Command])] = &[
+    (Subsystem::Util, COMMANDS_UTIL),
+    (Subsystem::Zdo, COMMANDS_ZDO),
+];
 
 pub fn get_command_by_name(subsystem: &Subsystem, name: &str) -> Option<&'static Command> {
     SUBSYSTEMS
@@ -106,6 +113,22 @@ pub const COMMANDS_UTIL: &[Command] = &[Command {
     request: Map::new(&[("led_id", ParameterType::U8), ("mode", ParameterType::U8)]),
     response: Map::new(&[("status", ParameterType::U8)]),
 }];
+
+pub const COMMANDS_ZDO: &[Command] = &[Command {
+    name: "mgmtNwkUpdateReq",
+    id: 55, // TODO: 0x0038 => 56?? (from zStackAdapter.ts)
+    command_type: MessageType::SREQ,
+    request: Map::new(&[
+        ("dst_addr", ParameterType::U16),
+        ("dst_addr_mode", ParameterType::U16),
+        ("channel_mask", ParameterType::U32),
+        ("scan_duration", ParameterType::U8),
+        ("scan_count", ParameterType::U8),
+        ("nwk_manager_addr", ParameterType::U16),
+    ]),
+    response: Map::new(&[("status", ParameterType::U8)]),
+}];
+
 
 #[derive(Debug)]
 pub enum ParameterError {
