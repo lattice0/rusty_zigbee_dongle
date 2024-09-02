@@ -47,7 +47,7 @@ impl LenType {
         }
     }
 
-    pub fn len(&self) -> usize {
+    pub fn size(&self) -> usize {
         match self {
             LenType::OneByte(v) => *v as usize,
             LenType::TwoByte(v) => *v as usize,
@@ -55,9 +55,9 @@ impl LenType {
     }
 }
 
-impl Into<usize> for LenType {
-    fn into(self) -> usize {
-        match self {
+impl From<LenType> for usize {
+    fn from(v: LenType) -> usize {
+        match v {
             LenType::OneByte(v) => v as usize,
             LenType::TwoByte(v) => v as usize,
         }
@@ -143,9 +143,9 @@ pub enum MessageType {
     RES3,
 }
 
-impl Into<u8> for MessageType {
-    fn into(self) -> u8 {
-        match self {
+impl From<MessageType> for u8 {
+    fn from(v: MessageType) -> u8 {
+        match v {
             MessageType::POLL => 0,
             MessageType::SREQ => 1,
             MessageType::AREQ => 2,
@@ -194,9 +194,48 @@ pub enum Subsystem {
     SrvCtr,
 }
 
-impl Into<u8> for Subsystem {
-    fn into(self) -> u8 {
-        match self {
+// impl Into<u8> for Subsystem {
+//     fn into(self) -> u8 {
+//         match self {
+//             Subsystem::Res0 => 0,
+//             Subsystem::Sys => 1,
+//             Subsystem::Mac => 2,
+//             Subsystem::Nwk => 3,
+//             Subsystem::Af => 4,
+//             Subsystem::Zdo => 5,
+//             Subsystem::Sapi => 6,
+//             Subsystem::Util => 7,
+//             Subsystem::Dbg => 8,
+//             Subsystem::App => 9,
+//             Subsystem::Rcaf => 10,
+//             Subsystem::Rcn => 11,
+//             Subsystem::RcnClient => 12,
+//             Subsystem::Boot => 13,
+//             Subsystem::Ziptest => 14,
+//             Subsystem::Debug => 15,
+//             Subsystem::Peripherals => 16,
+//             Subsystem::Nfc => 17,
+//             Subsystem::PbNwkMgr => 18,
+//             Subsystem::PbGw => 19,
+//             Subsystem::PbOtaMgr => 20,
+//             Subsystem::BleSpnp => 21,
+//             Subsystem::BleHci => 22,
+//             Subsystem::Resv01 => 23,
+//             Subsystem::Resv02 => 24,
+//             Subsystem::Resv03 => 25,
+//             Subsystem::Resv04 => 26,
+//             Subsystem::Resv05 => 27,
+//             Subsystem::Resv06 => 28,
+//             Subsystem::Resv07 => 29,
+//             Subsystem::Resv08 => 30,
+//             Subsystem::SrvCtr => 31,
+//         }
+//     }
+// }
+
+impl From<Subsystem> for u8 {
+    fn from(v: Subsystem) -> u8 {
+        match v {
             Subsystem::Res0 => 0,
             Subsystem::Sys => 1,
             Subsystem::Mac => 2,
@@ -267,16 +306,14 @@ impl<'a> TryFrom<(&'a [u8], LenTypeInfo)> for UnpiPacket<'a> {
         };
         let type_subsystem = data.read_u8()?;
         let command = data.read_u8()?;
-        let payload = data.subslice_exact(len.len())?;
+        let payload = data.subslice_exact(len.size())?;
         let fcs = data.read_u8()?;
         let p = UnpiPacket {
             len,
             type_subsystem: Wrapped(type_subsystem)
                 .try_into()
                 .map_err(|_| UnpiPacketError::InvalidTypeSubsystem(type_subsystem))?,
-            command: command
-                .try_into()
-                .map_err(|_| UnpiPacketError::InvalidCommand)?,
+            command,
             payload,
             fcs,
         };
@@ -289,9 +326,9 @@ impl<'a> TryFrom<(&'a [u8], LenTypeInfo)> for UnpiPacket<'a> {
     }
 }
 
-impl Into<Wrapped<u8>> for (MessageType, Subsystem) {
-    fn into(self) -> Wrapped<u8> {
-        Wrapped(Into::<u8>::into(self.0) << 5 | Into::<u8>::into(self.1))
+impl From<(MessageType, Subsystem)> for Wrapped<u8> {
+    fn from(value: (MessageType, Subsystem)) -> Wrapped<u8> {
+        Wrapped(Into::<u8>::into(value.0) << 5 | Into::<u8>::into(value.1))
     }
 }
 
@@ -339,7 +376,7 @@ impl<'a> UnpiPacket<'a> {
             LenType::TwoByte(_) => output.write_all(&self.len.to_le_bytes())?,
         };
         output.write_all(&[Into::<Wrapped<u8>>::into(self.type_subsystem.clone()).0])?;
-        output.write_all(&[self.command.into()])?;
+        output.write_all(&[self.command])?;
         output.write_all(self.payload)?;
         output.write_all(&[self.fcs])?;
         Ok(len - output.len())
@@ -358,8 +395,8 @@ impl<'a> UnpiPacket<'a> {
     }
 
     pub fn checksum(&self) -> Result<u8, std::io::Error> {
-        let mut output: &mut [u8] = &mut [0u8; MAX_FRAME_SIZE];
-        let len = self.to_bytes(&mut output)?;
+        let output: &mut [u8] = &mut [0u8; MAX_FRAME_SIZE];
+        let len = self.to_bytes(output)?;
         Ok(Self::checksum_buffer(&output[1..(len - 1)]))
     }
 }

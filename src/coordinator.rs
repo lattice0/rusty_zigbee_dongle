@@ -25,6 +25,7 @@ pub trait Coordinator {
         power: i8,
     ) -> impl Future<Output = Result<(), CoordinatorError>>;
     fn request_network_address(addr: &str) -> impl Future<Output = Result<(), CoordinatorError>>;
+    #[allow(clippy::too_many_arguments)]
     fn send_zcl_frame(
         &self,
         iee_addr: &Self::IeeAddress,
