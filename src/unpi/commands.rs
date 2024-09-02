@@ -1,4 +1,4 @@
-use super::{MessageType, Subsystem};
+use super::{subsystems::SUBSYSTEMS, MessageType, Subsystem};
 use crate::{
     coordinator::CoordinatorError,
     utils::{log, Map},
@@ -6,6 +6,7 @@ use crate::{
 use std::io::Write;
 
 #[derive(Debug, PartialEq)]
+/// Represents a command in the UNPI protocol.
 pub struct Command {
     pub name: &'static str,
     pub id: u8,
@@ -15,6 +16,7 @@ pub struct Command {
 }
 
 impl Command {
+    /// Fills the buffer with the parameters, failing if one of them isn't supposed to be there
     pub fn fill_and_write(
         &self,
         parameters: &[(&'static str, ParameterValue)],
@@ -92,12 +94,6 @@ impl ParameterValue {
     }
 }
 
-pub const SUBSYSTEMS: &[(Subsystem, &[Command])] = &[
-    (Subsystem::Util, COMMANDS_UTIL),
-    (Subsystem::Zdo, COMMANDS_ZDO),
-    (Subsystem::Sys, COMMANDS_SYS),
-];
-
 pub fn get_command_by_name(subsystem: &Subsystem, name: &str) -> Option<&'static Command> {
     SUBSYSTEMS
         .iter()
@@ -111,40 +107,6 @@ pub fn get_command_by_id(subsystem: &Subsystem, id: u8) -> Option<&'static Comma
         .find(|(s, _)| s == subsystem)
         .and_then(|(_, cmds)| cmds.iter().find(|c| c.id == id))
 }
-
-pub const COMMANDS_UTIL: &[Command] = &[Command {
-    name: "led_control",
-    id: 10,
-    command_type: MessageType::SREQ,
-    request: Map::new(&[("led_id", ParameterType::U8), ("mode", ParameterType::U8)]),
-    response: Map::new(&[("status", ParameterType::U8)]),
-}];
-
-pub const COMMANDS_ZDO: &[Command] = &[Command {
-    name: "management_network_update_request",
-    id: 55, // TODO: 0x0038 => 56?? (from zStackAdapter.ts)
-    command_type: MessageType::SREQ,
-    request: Map::new(&[
-        ("dst_addr", ParameterType::U16),
-        ("dst_addr_mode", ParameterType::U16),
-        ("channel_mask", ParameterType::U32),
-        ("scan_duration", ParameterType::U8),
-        ("scan_count", ParameterType::U8),
-        ("nwk_manager_addr", ParameterType::U16),
-    ]),
-    response: Map::new(&[("status", ParameterType::U8)]),
-}];
-
-pub const COMMANDS_SYS: &[Command] = &[Command {
-    name: "stack_tune",
-    id: 15,
-    command_type: MessageType::SREQ,
-    request: Map::new(&[
-        ("operation", ParameterType::U8),
-        ("value", ParameterType::I8),
-    ]),
-    response: Map::new(&[("value", ParameterType::U8)]),
-}];
 
 #[derive(Debug)]
 pub enum ParameterError {

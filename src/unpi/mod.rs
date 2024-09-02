@@ -1,8 +1,7 @@
 use std::io::{self, Read, Write};
-use commands::ParameterValue;
-use crate::coordinator::{Coordinator, CoordinatorError};
 
 pub mod commands;
+pub mod subsystems;
 
 pub const START_OF_FRAME: u8 = 0xFE;
 pub const MAX_FRAME_SIZE: usize = 255;

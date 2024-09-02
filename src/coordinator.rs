@@ -5,19 +5,33 @@ pub trait Coordinator {
     type ZclPayload<'a>;
     type IeeAddress;
 
-    fn start(&self) -> Result<(), CoordinatorError>;
-    fn stop(&self) -> Result<(), CoordinatorError>;
+    fn start(&self) -> impl std::future::Future<Output = Result<(), CoordinatorError>>;
+    fn stop(&self) -> impl std::future::Future<Output = Result<(), CoordinatorError>>;
     fn permit_join(
         &self,
         address: u16,
         duration: std::time::Duration,
-    ) -> Result<(), CoordinatorError>;
-    fn reset(&self, reset_type: ResetType) -> Result<(), CoordinatorError>;
-    fn set_led(&mut self, led_status: LedStatus) -> Result<(), CoordinatorError>;
-    fn change_channel(&mut self, channel: u8) -> Result<(), CoordinatorError>;
-    fn set_transmit_power(&mut self, power: i8) -> Result<(), CoordinatorError>;
-    fn request_network_address(addr: &str) -> Result<(), CoordinatorError>;
-    fn send_zcl_frame<'a>(
+    ) -> impl std::future::Future<Output = Result<(), CoordinatorError>>;
+    fn reset(
+        &self,
+        reset_type: ResetType,
+    ) -> impl std::future::Future<Output = Result<(), CoordinatorError>>;
+    fn set_led(
+        &mut self,
+        led_status: LedStatus,
+    ) -> impl std::future::Future<Output = Result<(), CoordinatorError>>;
+    fn change_channel(
+        &mut self,
+        channel: u8,
+    ) -> impl std::future::Future<Output = Result<(), CoordinatorError>>;
+    fn set_transmit_power(
+        &mut self,
+        power: i8,
+    ) -> impl std::future::Future<Output = Result<(), CoordinatorError>>;
+    fn request_network_address(
+        addr: &str,
+    ) -> impl std::future::Future<Output = Result<(), CoordinatorError>>;
+    fn send_zcl_frame(
         &self,
         iee_addr: &Self::IeeAddress,
         network_address: u16,
@@ -26,8 +40,8 @@ pub trait Coordinator {
         timeout: std::time::Duration,
         disable_response: bool,
         disable_recovery: bool,
-        source_endpoint: Option<u32>
-    ) -> Result<Option<Self::ZclPayload<'static>>, CoordinatorError>;
+        source_endpoint: Option<u32>,
+    ) -> impl std::future::Future<Output = Result<Option<Self::ZclPayload<'static>>, CoordinatorError>>;
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -50,7 +64,7 @@ pub enum CoordinatorError {
     NoCommandWithName,
     Io(String),
     Parameter(ParameterError),
-    InvalidChannel
+    InvalidChannel,
 }
 
 impl From<std::io::Error> for CoordinatorError {

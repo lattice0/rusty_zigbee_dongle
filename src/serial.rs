@@ -2,7 +2,7 @@ use crate::{
     coordinator::CoordinatorError,
     unpi::{
         commands::{Command, ParameterValue},
-        LenType, LenTypeInfo, MessageType, Subsystem, UnpiPacket, MAX_PAYLOAD_SIZE,
+        LenTypeInfo, MessageType, Subsystem, UnpiPacket, MAX_PAYLOAD_SIZE,
     },
 };
 use serialport::SerialPort;
@@ -30,7 +30,7 @@ impl<'a> UnpiPacket<'a> {
         let mut payload_buffer = [0u8; MAX_PAYLOAD_SIZE];
         let written = command.fill_and_write(parameters, &mut payload_buffer)?;
         let payload: &[u8] = &payload_buffer[0..written];
-        let mut h =
+        let h =
             UnpiPacket::from_payload((payload, LenTypeInfo::OneByte), type_subsystem, command_id)?;
         h.to_serial(&mut *serial)?;
         Ok(())

@@ -38,15 +38,15 @@ impl Coordinator for CC2531X {
 
     type IeeAddress = ieee802154::mac::Address;
 
-    fn start(&self) -> Result<(), CoordinatorError> {
+    async fn start(&self) -> Result<(), CoordinatorError> {
         todo!()
     }
 
-    fn stop(&self) -> Result<(), CoordinatorError> {
+    async fn stop(&self) -> Result<(), CoordinatorError> {
         todo!()
     }
 
-    fn permit_join(
+    async fn permit_join(
         &self,
         address: u16,
         duration: std::time::Duration,
@@ -54,11 +54,11 @@ impl Coordinator for CC2531X {
         todo!()
     }
 
-    fn reset(&self, reset_type: ResetType) -> Result<(), CoordinatorError> {
+    async fn reset(&self, reset_type: ResetType) -> Result<(), CoordinatorError> {
         todo!()
     }
 
-    fn set_led(&mut self, led_status: LedStatus) -> Result<(), CoordinatorError> {
+    async fn set_led(&mut self, led_status: LedStatus) -> Result<(), CoordinatorError> {
         let command = get_command_by_name(&Subsystem::Util, "led_control")
             .ok_or(CoordinatorError::NoCommandWithName)?;
         //TODO: const firmwareControlsLed = parseInt(this.version.revision) >= 20211029;
@@ -98,7 +98,7 @@ impl Coordinator for CC2531X {
         Ok(())
     }
 
-    fn change_channel(&mut self, channel: u8) -> Result<(), CoordinatorError> {
+    async fn change_channel(&mut self, channel: u8) -> Result<(), CoordinatorError> {
         let parameters = &[
             ("dst_addr", ParameterValue::U16(0xffff)),
             (
@@ -132,7 +132,7 @@ impl Coordinator for CC2531X {
         Ok(())
     }
 
-    fn set_transmit_power(&mut self, power: i8) -> Result<(), CoordinatorError> {
+    async fn set_transmit_power(&mut self, power: i8) -> Result<(), CoordinatorError> {
         let parameters = &[
             ("operation", ParameterValue::U8(0)),
             ("value", ParameterValue::I8(power)),
@@ -150,11 +150,11 @@ impl Coordinator for CC2531X {
         Ok(())
     }
 
-    fn request_network_address(addr: &str) -> Result<(), CoordinatorError> {
+    async fn request_network_address(addr: &str) -> Result<(), CoordinatorError> {
         todo!()
     }
 
-    fn send_zcl_frame(
+    async fn send_zcl_frame(
         &self,
         iee_addr: &Self::IeeAddress,
         network_address: u16,
@@ -165,16 +165,6 @@ impl Coordinator for CC2531X {
         disable_recovery: bool,
         source_endpoint: Option<u32>,
     ) -> Result<Option<Self::ZclPayload<'static>>, CoordinatorError> {
-        let payload: &[u8] = todo!();
-        let unpi_header = UnpiPacket::from_payload(
-            (payload, LenTypeInfo::OneByte),
-            (MessageType::SREQ, Subsystem::Af),
-            0x00,
-        );
-        let buffer: &[u8] = todo!();
-        self.serial
-            .write_all(buffer)
-            .map_err(|e| CoordinatorError::SerialWrite(e.to_string()))?;
         Ok(None)
     }
 }
