@@ -80,6 +80,7 @@ impl LenTypeInfo {
     }
 }
 
+#[allow(unused)]
 impl<'a> Wrapped<&'a [u8]> {
     pub fn read_u8(&mut self) -> Result<u8, std::io::Error> {
         let mut buffer = [0u8; 1];

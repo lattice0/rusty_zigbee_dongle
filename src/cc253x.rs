@@ -2,7 +2,7 @@ use crate::{
     coordinator::{Coordinator, CoordinatorError, LedStatus, ResetType},
     unpi::{
         commands::{get_command_by_name, ParameterValue},
-        LenTypeInfo, MessageType, Subsystem, UnpiPacket,
+        MessageType, Subsystem, UnpiPacket,
     },
     AddressMode,
 };
@@ -13,7 +13,7 @@ use std::{path::PathBuf, time::Duration};
 const MAXIMUM_ZIGBEE_PAYLOAD_SIZE: usize = 255;
 
 pub struct CC2531X {
-    supports_led: Option<bool>,
+    _supports_led: Option<bool>,
     serial: Box<dyn SerialPort>,
 }
 
@@ -25,7 +25,7 @@ impl CC2531X {
             .map_err(|e| CoordinatorError::SerialOpen(e.to_string()))?;
         Ok(Self {
             serial,
-            supports_led: None,
+            _supports_led: None,
         })
     }
 }
@@ -48,13 +48,13 @@ impl Coordinator for CC2531X {
 
     async fn permit_join(
         &self,
-        address: u16,
-        duration: std::time::Duration,
+        _address: u16,
+        _duration: std::time::Duration,
     ) -> Result<(), CoordinatorError> {
         todo!()
     }
 
-    async fn reset(&self, reset_type: ResetType) -> Result<(), CoordinatorError> {
+    async fn reset(&self, _reset_type: ResetType) -> Result<(), CoordinatorError> {
         todo!()
     }
 
@@ -150,20 +150,20 @@ impl Coordinator for CC2531X {
         Ok(())
     }
 
-    async fn request_network_address(addr: &str) -> Result<(), CoordinatorError> {
+    async fn request_network_address(_addr: &str) -> Result<(), CoordinatorError> {
         todo!()
     }
 
     async fn send_zcl_frame(
         &self,
-        iee_addr: &Self::IeeAddress,
-        network_address: u16,
-        endpoint: u16,
-        zcl_frame: &Self::ZclFrame,
-        timeout: std::time::Duration,
-        disable_response: bool,
-        disable_recovery: bool,
-        source_endpoint: Option<u32>,
+        _iee_addr: &Self::IeeAddress,
+        _network_address: u16,
+        _endpoint: u16,
+        _zcl_frame: &Self::ZclFrame,
+        _timeout: std::time::Duration,
+        _disable_response: bool,
+        _disable_recovery: bool,
+        _source_endpoint: Option<u32>,
     ) -> Result<Option<Self::ZclPayload<'static>>, CoordinatorError> {
         Ok(None)
     }
