@@ -1,6 +1,9 @@
 use core::future::Future;
-use core::pin::Pin;
-use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
+use core::task::{Context, Poll};
+use std::io::Read;
+use std::pin::pin;
+use std::sync::Arc;
+use std::task::Wake;
 
 #[derive(Debug, PartialEq)]
 pub struct Map<K: PartialEq + 'static, V: PartialEq + 'static>(&'static [(K, V)]);
@@ -29,36 +32,61 @@ macro_rules! log {
     }
 }
 pub(crate) use log;
+struct NoOpWaker;
 
-// Create a no-op waker
-fn dummy_raw_waker() -> RawWaker {
-    fn no_op_clone(_: *const ()) -> RawWaker {
-        dummy_raw_waker()
+
+pub struct SliceReader<'a>(pub &'a [u8]);
+
+#[allow(unused)]
+impl<'a> SliceReader<'a> {
+    pub fn read_u8(&mut self) -> Result<u8, std::io::Error> {
+        let mut buffer = [0u8; 1];
+        self.0.read_exact(&mut buffer[..])?;
+        Ok(buffer[0])
     }
 
-    fn no_op(_: *const ()) {}
+    pub fn read_u16_be(&mut self) -> Result<u16, std::io::Error> {
+        let mut buffer = [0u8; 2];
+        self.0.read_exact(&mut buffer)?;
+        Ok(u16::from_be_bytes(buffer))
+    }
 
-    RawWaker::new(
-        core::ptr::null(),
-        &RawWakerVTable::new(no_op_clone, no_op, no_op, no_op),
-    )
+    pub fn read_u16_le(&mut self) -> Result<u16, std::io::Error> {
+        let mut buffer = [0u8; 2];
+        self.0.read_exact(&mut buffer)?;
+        Ok(u16::from_le_bytes(buffer))
+    }
+
+    pub fn read_exact(&mut self, output: &mut [u8]) -> Result<(), std::io::Error> {
+        self.0.read_exact(output)
+    }
+
+    pub fn subslice_exact(&mut self, len: usize) -> Result<&'a [u8], std::io::Error> {
+        let (left, right) = self.0.split_at_checked(len).ok_or(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "split at error",
+        ))?;
+        self.0 = right;
+        Ok(left)
+    }
+}
+
+impl Wake for NoOpWaker {
+    fn wake(self: Arc<Self>) {}
 }
 
 // no dependency blocking function for debugging only
-pub fn debug_only_unsafe_block_on<F: Future>(mut future: F) -> F::Output {
-    let waker = unsafe { Waker::from_raw(dummy_raw_waker()) };
+pub fn debug_only_block_on<F: Future>(mut future: F) -> F::Output {
+    let waker = Arc::new(NoOpWaker).into();
+
     let mut context = Context::from_waker(&waker);
 
-    // Pin the future on the stack
-    let mut future = unsafe { Pin::new_unchecked(&mut future) };
+    let mut future = pin!(future);
 
     loop {
         match future.as_mut().poll(&mut context) {
             Poll::Ready(val) => return val,
-            Poll::Pending => {
-                // In a real system, you might yield to the executor or check other tasks,
-                // but in this simple case, we just keep polling.
-            }
+            Poll::Pending => {}
         }
     }
 }

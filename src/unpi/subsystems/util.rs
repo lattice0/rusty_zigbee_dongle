@@ -10,6 +10,6 @@ pub const COMMANDS_UTIL: &[Command] = &[Command {
     name: "led_control",
     id: 10,
     command_type: MessageType::SREQ,
-    request: Map::new(&[("led_id", ParameterType::U8), ("mode", ParameterType::U8)]),
-    response: Map::new(&[("status", ParameterType::U8)]),
+    request: Some(Map::new(&[("led_id", ParameterType::U8), ("mode", ParameterType::U8)])),
+    response: Some(Map::new(&[("status", ParameterType::U8)])),
 }];

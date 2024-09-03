@@ -11,8 +11,8 @@ pub struct Command {
     pub name: &'static str,
     pub id: u8,
     pub command_type: MessageType,
-    pub request: Map<&'static str, ParameterType>,
-    pub response: Map<&'static str, ParameterType>,
+    pub request: Option<Map<&'static str, ParameterType>>,
+    pub response: Option<Map<&'static str, ParameterType>>,
 }
 
 impl Command {
@@ -23,14 +23,14 @@ impl Command {
         mut output: &mut [u8],
     ) -> Result<usize, CoordinatorError> {
         let len = output.len();
+        let request = self.request.as_ref().ok_or(CoordinatorError::RequestMismatch)?;
         // Let's fill the values and match against the template in self.request, just for safety
         parameters.iter().try_for_each(|(name, value)| {
             // Find parameter in request
-            let parameter_type = self
-                .request
+            let parameter_type = request
                 .get(name)
                 .ok_or(CoordinatorError::NoCommandWithName)?;
-            if self.request.contains_key(name) {
+            if request.contains_key(name) {
                 // Only writes if we match the parameter type
                 let written = value.match_and_write(parameter_type, output)?;
                 let new_output = std::mem::take(&mut output);

@@ -2,7 +2,7 @@ use crate::{
     coordinator::{Coordinator, CoordinatorError, LedStatus, ResetType},
     unpi::{
         commands::{get_command_by_name, ParameterValue},
-        MessageType, Subsystem, UnpiPacket,
+        LenTypeInfo, MessageType, Subsystem, UnpiPacket, MAX_FRAME_SIZE,
     },
     AddressMode,
 };
@@ -28,9 +28,32 @@ impl CC2531X {
             _supports_led: None,
         })
     }
+
+    pub async fn wait_for(
+        &mut self,
+        message_type: MessageType,
+        subsystem: Subsystem,
+        command: u8,
+        _timeout: Option<std::time::Duration>,
+    ) -> Result<(), CoordinatorError> {
+        let mut buffer = [0; MAX_FRAME_SIZE];
+        let len = self
+            .serial
+            .read(&mut buffer)
+            .map_err(|e| CoordinatorError::Io(e.to_string()))?;
+        let packet = UnpiPacket::from_payload(
+            (&buffer[..len], LenTypeInfo::OneByte),
+            (message_type, subsystem),
+            command,
+        )?;
+        if packet.type_subsystem == (message_type, subsystem) && packet.command == command {
+            Ok(())
+        } else {
+            Err(CoordinatorError::Io("Unexpected message".to_string()))
+        }
+    }
 }
 
-#[cfg(feature = "psila")]
 impl Coordinator for CC2531X {
     type ZclFrame = psila_data::cluster_library::ClusterLibraryHeader;
 
@@ -54,8 +77,23 @@ impl Coordinator for CC2531X {
         todo!()
     }
 
-    async fn reset(&self, _reset_type: ResetType) -> Result<(), CoordinatorError> {
-        todo!()
+    async fn reset(&mut self, reset_type: ResetType) -> Result<(), CoordinatorError> {
+        let command = get_command_by_name(&Subsystem::Sys, "reset_req")
+            .ok_or(CoordinatorError::NoCommandWithName)?;
+        let parameters = match reset_type {
+            ResetType::Soft => &[("type", ParameterValue::U8(1))],
+            ResetType::Hard => &[("type", ParameterValue::U8(0))],
+        };
+
+        UnpiPacket::from_command_to_serial(
+            command.id,
+            command,
+            parameters,
+            (MessageType::SREQ, Subsystem::Util),
+            &mut *self.serial,
+        )?;
+
+        Ok(())
     }
 
     async fn set_led(&mut self, led_status: LedStatus) -> Result<(), CoordinatorError> {
@@ -119,7 +157,7 @@ impl Coordinator for CC2531X {
             ("nwk_manager_addr", ParameterValue::U16(0)),
         ];
 
-        let command = get_command_by_name(&Subsystem::Zdo, "mgmtNwkUpdateReq")
+        let command = get_command_by_name(&Subsystem::Zdo, "management_network_update_request")
             .ok_or(CoordinatorError::NoCommandWithName)?;
         UnpiPacket::from_command_to_serial(
             command.id,

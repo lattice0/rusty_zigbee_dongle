@@ -8,6 +8,8 @@ use crate::{
 use serialport::SerialPort;
 
 impl<'a> UnpiPacket<'a> {
+
+    /// Serialized the packet to the serial port
     pub fn to_serial<S: SerialPort + ?Sized>(
         &self,
         serial: &mut S,
@@ -20,6 +22,8 @@ impl<'a> UnpiPacket<'a> {
         Ok(())
     }
 
+    /// Instantiates a packet from a command and writes it to the serial port
+    /// This way we don't have lifetime issues returning the packet referencing the local payload
     pub fn from_command_to_serial<S: SerialPort + ?Sized>(
         command_id: u8,
         command: &Command,

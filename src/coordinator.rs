@@ -13,7 +13,7 @@ pub trait Coordinator {
         address: u16,
         duration: std::time::Duration,
     ) -> impl Future<Output = Result<(), CoordinatorError>>;
-    fn reset(&self, reset_type: ResetType) -> impl Future<Output = Result<(), CoordinatorError>>;
+    fn reset(&mut self, reset_type: ResetType) -> impl Future<Output = Result<(), CoordinatorError>>;
     fn set_led(
         &mut self,
         led_status: LedStatus,
@@ -60,6 +60,7 @@ pub enum CoordinatorError {
     Io(String),
     Parameter(ParameterError),
     InvalidChannel,
+    RequestMismatch
 }
 
 impl From<std::io::Error> for CoordinatorError {

@@ -1,4 +1,5 @@
-use std::io::{self, Read, Write};
+use crate::utils::SliceReader;
+use std::io::Write;
 
 pub mod commands;
 pub mod subsystems;
@@ -80,40 +81,6 @@ impl LenTypeInfo {
     }
 }
 
-#[allow(unused)]
-impl<'a> Wrapped<&'a [u8]> {
-    pub fn read_u8(&mut self) -> Result<u8, std::io::Error> {
-        let mut buffer = [0u8; 1];
-        self.0.read_exact(&mut buffer[..])?;
-        Ok(buffer[0])
-    }
-
-    pub fn read_u16_be(&mut self) -> Result<u16, std::io::Error> {
-        let mut buffer = [0u8; 2];
-        self.0.read_exact(&mut buffer)?;
-        Ok(u16::from_be_bytes(buffer))
-    }
-
-    pub fn read_u16_le(&mut self) -> Result<u16, std::io::Error> {
-        let mut buffer = [0u8; 2];
-        self.0.read_exact(&mut buffer)?;
-        Ok(u16::from_le_bytes(buffer))
-    }
-
-    pub fn read_exact(&mut self, output: &mut [u8]) -> Result<(), std::io::Error> {
-        self.0.read_exact(output)
-    }
-
-    pub fn subslice_exact(&mut self, len: usize) -> Result<&'a [u8], std::io::Error> {
-        let (left, right) = self.0.split_at_checked(len).ok_or(std::io::Error::new(
-            io::ErrorKind::InvalidData,
-            "split at error",
-        ))?;
-        self.0 = right;
-        Ok(left)
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub enum UnpiPacketError {
     InvalidStartOfFrame(u8),
@@ -131,7 +98,7 @@ impl From<std::io::Error> for UnpiPacketError {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum MessageType {
     POLL,
     SREQ,
@@ -193,45 +160,6 @@ pub enum Subsystem {
     Resv08,
     SrvCtr,
 }
-
-// impl Into<u8> for Subsystem {
-//     fn into(self) -> u8 {
-//         match self {
-//             Subsystem::Res0 => 0,
-//             Subsystem::Sys => 1,
-//             Subsystem::Mac => 2,
-//             Subsystem::Nwk => 3,
-//             Subsystem::Af => 4,
-//             Subsystem::Zdo => 5,
-//             Subsystem::Sapi => 6,
-//             Subsystem::Util => 7,
-//             Subsystem::Dbg => 8,
-//             Subsystem::App => 9,
-//             Subsystem::Rcaf => 10,
-//             Subsystem::Rcn => 11,
-//             Subsystem::RcnClient => 12,
-//             Subsystem::Boot => 13,
-//             Subsystem::Ziptest => 14,
-//             Subsystem::Debug => 15,
-//             Subsystem::Peripherals => 16,
-//             Subsystem::Nfc => 17,
-//             Subsystem::PbNwkMgr => 18,
-//             Subsystem::PbGw => 19,
-//             Subsystem::PbOtaMgr => 20,
-//             Subsystem::BleSpnp => 21,
-//             Subsystem::BleHci => 22,
-//             Subsystem::Resv01 => 23,
-//             Subsystem::Resv02 => 24,
-//             Subsystem::Resv03 => 25,
-//             Subsystem::Resv04 => 26,
-//             Subsystem::Resv05 => 27,
-//             Subsystem::Resv06 => 28,
-//             Subsystem::Resv07 => 29,
-//             Subsystem::Resv08 => 30,
-//             Subsystem::SrvCtr => 31,
-//         }
-//     }
-// }
 
 impl From<Subsystem> for u8 {
     fn from(v: Subsystem) -> u8 {
@@ -295,7 +223,7 @@ impl<'a> TryFrom<(&'a [u8], LenTypeInfo)> for UnpiPacket<'a> {
 
     /// Type safe constructor for UnpiPacket with dependence of len_type_info
     fn try_from((data, len_type_info): (&[u8], LenTypeInfo)) -> Result<UnpiPacket, Self::Error> {
-        let mut data = Wrapped(data);
+        let mut data = SliceReader(data);
         let sof = data.read_u8()?;
         if sof != START_OF_FRAME {
             return Err(UnpiPacketError::InvalidStartOfFrame(sof));
