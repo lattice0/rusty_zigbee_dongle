@@ -5,13 +5,6 @@ pub mod utils;
 pub mod cc253x;
 pub mod serial;
 
-pub enum AddressMode {
-    AddrNotPresent = 0,
-    AddrGroup = 1,
-    Addr16bit = 2,
-    Addr64bit = 3,
-    AddrBroadcast = 15,
-}
 
 #[cfg(test)]
 mod tests {

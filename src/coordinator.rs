@@ -40,6 +40,14 @@ pub trait Coordinator {
     ) -> impl Future<Output = Result<Option<Self::ZclPayload<'static>>, CoordinatorError>>;
 }
 
+pub enum AddressMode {
+    AddrNotPresent = 0,
+    AddrGroup = 1,
+    Addr16bit = 2,
+    Addr64bit = 3,
+    AddrBroadcast = 15,
+}
+
 #[derive(Debug, Copy, Clone)]
 pub enum LedStatus {
     Disable,
@@ -55,10 +63,10 @@ pub enum ResetType {
 
 #[derive(Debug)]
 pub enum CoordinatorError {
-    SerialOpen(String),
-    SerialWrite(String),
+    SerialOpen,
+    SerialWrite,
     NoCommandWithName,
-    Io(String),
+    Io,
     Parameter(ParameterError),
     InvalidChannel,
     RequestMismatch,
@@ -67,8 +75,8 @@ pub enum CoordinatorError {
 }
 
 impl From<std::io::Error> for CoordinatorError {
-    fn from(e: std::io::Error) -> Self {
-        CoordinatorError::Io(e.to_string())
+    fn from(_e: std::io::Error) -> Self {
+        CoordinatorError::Io
     }
 }
 

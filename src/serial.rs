@@ -19,7 +19,7 @@ impl<'a> UnpiPacket<'a> {
         let written = self.to_bytes(&mut unpi_packet_buffer)?;
         serial
             .write_all(&unpi_packet_buffer[0..written])
-            .map_err(|e| CoordinatorError::SerialWrite(e.to_string()))?;
+            .map_err(|_e| CoordinatorError::SerialWrite)?;
         Ok(())
     }
 

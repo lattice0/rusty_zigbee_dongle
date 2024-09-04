@@ -1,10 +1,9 @@
 use crate::{
-    coordinator::{Coordinator, CoordinatorError, LedStatus, ResetType},
+    coordinator::{AddressMode, Coordinator, CoordinatorError, LedStatus, ResetType},
     unpi::{
         commands::{get_command_by_name, ParameterValue},
         LenTypeInfo, MessageType, Subsystem, UnpiPacket, MAX_FRAME_SIZE,
     },
-    AddressMode,
 };
 use serialport::SerialPort;
 use std::{path::PathBuf, time::Duration};
@@ -22,7 +21,7 @@ impl CC2531X {
         let serial = serialport::new(path.to_str().unwrap(), baud_rate)
             .timeout(Duration::from_millis(10))
             .open()
-            .map_err(|e| CoordinatorError::SerialOpen(e.to_string()))?;
+            .map_err(|_e| CoordinatorError::SerialOpen)?;
         Ok(Self {
             serial,
             _supports_led: None,
@@ -34,7 +33,6 @@ impl CC2531X {
         name: &str,
         message_type: MessageType,
         subsystem: Subsystem,
-        command: u8,
         _timeout: Option<std::time::Duration>,
     ) -> Result<(), CoordinatorError> {
         let command =
@@ -43,7 +41,7 @@ impl CC2531X {
         let len = self
             .serial
             .read(&mut buffer)
-            .map_err(|e| CoordinatorError::Io(e.to_string()))?;
+            .map_err(|_e| CoordinatorError::Io)?;
         let packet = UnpiPacket::from_payload(
             (&buffer[..len], LenTypeInfo::OneByte),
             (message_type, subsystem),
@@ -52,7 +50,7 @@ impl CC2531X {
         if packet.type_subsystem == (message_type, subsystem) && packet.command == command.id {
             Ok(())
         } else {
-            Err(CoordinatorError::Io("Unexpected message".to_string()))
+            Err(CoordinatorError::Io)
         }
     }
 }
