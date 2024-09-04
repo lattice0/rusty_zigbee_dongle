@@ -8,21 +8,21 @@ pub trait Coordinator {
 
     fn start(&self) -> impl Future<Output = Result<(), CoordinatorError>>;
     fn stop(&self) -> impl Future<Output = Result<(), CoordinatorError>>;
-    fn version(&mut self) -> impl Future<Output = Result<usize, CoordinatorError>>;
+    fn version(&self) -> impl Future<Output = Result<usize, CoordinatorError>>;
     fn permit_join(
         &self,
         address: u16,
         duration: std::time::Duration,
     ) -> impl Future<Output = Result<(), CoordinatorError>>;
-    fn reset(&mut self, reset_type: ResetType) -> impl Future<Output = Result<(), CoordinatorError>>;
+    fn reset(&self, reset_type: ResetType) -> impl Future<Output = Result<(), CoordinatorError>>;
     fn set_led(
-        &mut self,
+        &self,
         led_status: LedStatus,
     ) -> impl Future<Output = Result<(), CoordinatorError>>;
-    fn change_channel(&mut self, channel: u8)
+    fn change_channel(&self, channel: u8)
         -> impl Future<Output = Result<(), CoordinatorError>>;
     fn set_transmit_power(
-        &mut self,
+        &self,
         power: i8,
     ) -> impl Future<Output = Result<(), CoordinatorError>>;
     fn request_network_address(addr: &str) -> impl Future<Output = Result<(), CoordinatorError>>;

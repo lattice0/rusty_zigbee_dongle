@@ -6,14 +6,20 @@ use crate::{
     },
 };
 use serialport::SerialPort;
-use std::{path::PathBuf, time::Duration};
+use std::{
+    borrow::BorrowMut,
+    ops::DerefMut,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 //TODO: fix this
 const MAXIMUM_ZIGBEE_PAYLOAD_SIZE: usize = 255;
 
 pub struct CC2531X {
     _supports_led: Option<bool>,
-    serial: Box<dyn SerialPort>,
+    serial: Arc<Mutex<Box<dyn SerialPort>>>,
 }
 
 impl CC2531X {
@@ -23,13 +29,13 @@ impl CC2531X {
             .open()
             .map_err(|_e| CoordinatorError::SerialOpen)?;
         Ok(Self {
-            serial,
+            serial: Arc::new(Mutex::new(serial)),
             _supports_led: None,
         })
     }
 
     pub async fn wait_for(
-        &mut self,
+        &self,
         name: &str,
         message_type: MessageType,
         subsystem: Subsystem,
@@ -40,6 +46,8 @@ impl CC2531X {
         let mut buffer = [0; MAX_FRAME_SIZE];
         let len = self
             .serial
+            .lock()
+            .unwrap()
             .read(&mut buffer)
             .map_err(|_e| CoordinatorError::Io)?;
         let packet = UnpiPacket::from_payload(
@@ -78,28 +86,23 @@ impl Coordinator for CC2531X {
         todo!()
     }
 
-    async fn version(&mut self) -> Result<usize, CoordinatorError> {
+    async fn version(&self) -> Result<usize, CoordinatorError> {
         let command = get_command_by_name(&Subsystem::Sys, "version")
             .ok_or(CoordinatorError::NoCommandWithName)?;
+        let mut lock = self.serial.lock().unwrap();
         let send = UnpiPacket::from_command_to_serial_async(
             command.id,
             command,
             &[],
             (MessageType::SREQ, Subsystem::Sys),
-            &mut *self.serial,
+            &mut **lock,
         );
-        // let wait = self.wait_for(
-        //     "version",
-        //     MessageType::SRESP,
-        //     Subsystem::Sys,
-        //     command.id,
-        //     None,
-        // );
-        // let r = futures::try_join!(send, wait)?;
+        let wait = self.wait_for("version", MessageType::SRESP, Subsystem::Sys, None);
+        let r = futures::try_join!(send, wait)?;
         Ok(0)
     }
 
-    async fn reset(&mut self, reset_type: ResetType) -> Result<(), CoordinatorError> {
+    async fn reset(&self, reset_type: ResetType) -> Result<(), CoordinatorError> {
         let command = get_command_by_name(&Subsystem::Sys, "reset_req")
             .ok_or(CoordinatorError::NoCommandWithName)?;
         let parameters = match reset_type {
@@ -107,22 +110,24 @@ impl Coordinator for CC2531X {
             ResetType::Hard => &[("type", ParameterValue::U8(0))],
         };
 
+        let mut lock = self.serial.lock().unwrap();
         UnpiPacket::from_command_to_serial(
             command.id,
             command,
             parameters,
             (MessageType::SREQ, Subsystem::Util),
-            &mut *self.serial,
+            &mut **lock,
         )?;
 
         Ok(())
     }
 
-    async fn set_led(&mut self, led_status: LedStatus) -> Result<(), CoordinatorError> {
+    async fn set_led(&self, led_status: LedStatus) -> Result<(), CoordinatorError> {
         let command = get_command_by_name(&Subsystem::Util, "led_control")
             .ok_or(CoordinatorError::NoCommandWithName)?;
         //TODO: const firmwareControlsLed = parseInt(this.version.revision) >= 20211029;
         let firmware_controls_led = true;
+        let mut lock = self.serial.lock().unwrap();
         let parameters = match led_status {
             LedStatus::Disable => {
                 if firmware_controls_led {
@@ -152,13 +157,13 @@ impl Coordinator for CC2531X {
             command,
             parameters,
             (MessageType::SREQ, Subsystem::Util),
-            &mut *self.serial,
+            &mut **lock,
         )?;
 
         Ok(())
     }
 
-    async fn change_channel(&mut self, channel: u8) -> Result<(), CoordinatorError> {
+    async fn change_channel(&self, channel: u8) -> Result<(), CoordinatorError> {
         let parameters = &[
             ("dst_addr", ParameterValue::U16(0xffff)),
             (
@@ -181,18 +186,19 @@ impl Coordinator for CC2531X {
 
         let command = get_command_by_name(&Subsystem::Zdo, "management_network_update_request")
             .ok_or(CoordinatorError::NoCommandWithName)?;
+        let mut lock = self.serial.lock().unwrap();
         UnpiPacket::from_command_to_serial(
             command.id,
             command,
             parameters,
             (MessageType::SREQ, Subsystem::Zdo),
-            &mut *self.serial,
+            &mut **lock,
         )?;
 
         Ok(())
     }
 
-    async fn set_transmit_power(&mut self, power: i8) -> Result<(), CoordinatorError> {
+    async fn set_transmit_power(&self, power: i8) -> Result<(), CoordinatorError> {
         let parameters = &[
             ("operation", ParameterValue::U8(0)),
             ("value", ParameterValue::I8(power)),
@@ -200,12 +206,13 @@ impl Coordinator for CC2531X {
 
         let command = get_command_by_name(&Subsystem::Zdo, "stack_tune")
             .ok_or(CoordinatorError::NoCommandWithName)?;
+        let mut lock = self.serial.lock().unwrap();
         UnpiPacket::from_command_to_serial(
             command.id,
             command,
             parameters,
             (MessageType::SREQ, Subsystem::Zdo),
-            &mut *self.serial,
+            &mut **lock,
         )?;
         Ok(())
     }
