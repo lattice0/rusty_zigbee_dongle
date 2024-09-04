@@ -3,14 +3,14 @@ use crate::{
         commands::{Command, ParameterType},
         MessageType,
     },
-    utils::Map,
+    utils::map::StaticMap,
 };
 
 pub const COMMANDS_ZDO: &[Command] = &[Command {
     name: "management_network_update_request",
     id: 55, // TODO: 0x0038 => 56?? (from zStackAdapter.ts)
     command_type: MessageType::SREQ,
-    request: Some(Map::new(&[
+    request: Some(StaticMap::new(&[
         ("dst_addr", ParameterType::U16),
         ("dst_addr_mode", ParameterType::U16),
         ("channel_mask", ParameterType::U32),
@@ -18,5 +18,5 @@ pub const COMMANDS_ZDO: &[Command] = &[Command {
         ("scan_count", ParameterType::U8),
         ("nwk_manager_addr", ParameterType::U16),
     ])),
-    response: Some(Map::new(&[("status", ParameterType::U8)])),
+    response: Some(StaticMap::new(&[("status", ParameterType::U8)])),
 }];

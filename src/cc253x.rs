@@ -31,11 +31,14 @@ impl CC2531X {
 
     pub async fn wait_for(
         &mut self,
+        name: &str,
         message_type: MessageType,
         subsystem: Subsystem,
         command: u8,
         _timeout: Option<std::time::Duration>,
     ) -> Result<(), CoordinatorError> {
+        let command =
+            get_command_by_name(&subsystem, name).ok_or(CoordinatorError::NoCommandWithName)?;
         let mut buffer = [0; MAX_FRAME_SIZE];
         let len = self
             .serial
@@ -44,9 +47,9 @@ impl CC2531X {
         let packet = UnpiPacket::from_payload(
             (&buffer[..len], LenTypeInfo::OneByte),
             (message_type, subsystem),
-            command,
+            command.id,
         )?;
-        if packet.type_subsystem == (message_type, subsystem) && packet.command == command {
+        if packet.type_subsystem == (message_type, subsystem) && packet.command == command.id {
             Ok(())
         } else {
             Err(CoordinatorError::Io("Unexpected message".to_string()))
@@ -75,6 +78,27 @@ impl Coordinator for CC2531X {
         _duration: std::time::Duration,
     ) -> Result<(), CoordinatorError> {
         todo!()
+    }
+
+    async fn version(&mut self) -> Result<usize, CoordinatorError> {
+        let command = get_command_by_name(&Subsystem::Sys, "version")
+            .ok_or(CoordinatorError::NoCommandWithName)?;
+        let send = UnpiPacket::from_command_to_serial_async(
+            command.id,
+            command,
+            &[],
+            (MessageType::SREQ, Subsystem::Sys),
+            &mut *self.serial,
+        );
+        // let wait = self.wait_for(
+        //     "version",
+        //     MessageType::SRESP,
+        //     Subsystem::Sys,
+        //     command.id,
+        //     None,
+        // );
+        // let r = futures::try_join!(send, wait)?;
+        Ok(0)
     }
 
     async fn reset(&mut self, reset_type: ResetType) -> Result<(), CoordinatorError> {

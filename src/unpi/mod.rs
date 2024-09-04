@@ -1,4 +1,4 @@
-use crate::utils::SliceReader;
+use crate::utils::slice_reader::SliceReader;
 use std::io::Write;
 
 pub mod commands;

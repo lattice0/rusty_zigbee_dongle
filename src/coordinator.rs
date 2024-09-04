@@ -1,4 +1,4 @@
-use crate::unpi::commands::ParameterError;
+use crate::{unpi::commands::ParameterError, utils::map::MapError};
 use std::future::Future;
 
 pub trait Coordinator {
@@ -8,6 +8,7 @@ pub trait Coordinator {
 
     fn start(&self) -> impl Future<Output = Result<(), CoordinatorError>>;
     fn stop(&self) -> impl Future<Output = Result<(), CoordinatorError>>;
+    fn version(&mut self) -> impl Future<Output = Result<usize, CoordinatorError>>;
     fn permit_join(
         &self,
         address: u16,
@@ -60,7 +61,9 @@ pub enum CoordinatorError {
     Io(String),
     Parameter(ParameterError),
     InvalidChannel,
-    RequestMismatch
+    RequestMismatch,
+    ResponseMismatch,
+    Map(MapError)
 }
 
 impl From<std::io::Error> for CoordinatorError {
@@ -72,5 +75,11 @@ impl From<std::io::Error> for CoordinatorError {
 impl From<ParameterError> for CoordinatorError {
     fn from(e: ParameterError) -> Self {
         CoordinatorError::Parameter(e)
+    }
+}
+
+impl From<MapError> for CoordinatorError {
+    fn from(e: MapError) -> Self {
+        CoordinatorError::Map(e)
     }
 }

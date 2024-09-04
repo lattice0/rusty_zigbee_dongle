@@ -1,9 +1,14 @@
 use super::{subsystems::SUBSYSTEMS, MessageType, Subsystem};
 use crate::{
     coordinator::CoordinatorError,
-    utils::{log, Map},
+    utils::{log, map::StaticMap, slice_reader::SliceReader},
 };
 use std::io::Write;
+
+pub const MAX_COMMAND_SIZE: usize = 15;
+
+pub type ParametersValueMap = StaticMap<MAX_COMMAND_SIZE, &'static str, ParameterValue>;
+pub type ParametersTypeMap = StaticMap<MAX_COMMAND_SIZE, &'static str, ParameterType>;
 
 #[derive(Debug, PartialEq)]
 /// Represents a command in the UNPI protocol.
@@ -11,8 +16,8 @@ pub struct Command {
     pub name: &'static str,
     pub id: u8,
     pub command_type: MessageType,
-    pub request: Option<Map<&'static str, ParameterType>>,
-    pub response: Option<Map<&'static str, ParameterType>>,
+    pub request: Option<ParametersTypeMap>,
+    pub response: Option<ParametersTypeMap>,
 }
 
 impl Command {
@@ -23,7 +28,10 @@ impl Command {
         mut output: &mut [u8],
     ) -> Result<usize, CoordinatorError> {
         let len = output.len();
-        let request = self.request.as_ref().ok_or(CoordinatorError::RequestMismatch)?;
+        let request = self
+            .request
+            .as_ref()
+            .ok_or(CoordinatorError::RequestMismatch)?;
         // Let's fill the values and match against the template in self.request, just for safety
         parameters.iter().try_for_each(|(name, value)| {
             // Find parameter in request
@@ -44,9 +52,24 @@ impl Command {
         })?;
         Ok(len - output.len())
     }
+
+    pub fn read_and_fill(&self, input: &[u8]) -> Result<ParametersValueMap, CoordinatorError> {
+        let mut reader = SliceReader(input);
+        let response = self
+            .response
+            .as_ref()
+            .ok_or(CoordinatorError::ResponseMismatch)?;
+        let mut parameters: ParametersValueMap = Default::default();
+        response.iter().try_for_each(|(name, parameter_type)| {
+            let value = parameter_type.from_slice_reader(&mut reader)?;
+            parameters.insert(name, value)?;
+            Ok::<(), CoordinatorError>(())
+        })?;
+        Ok(parameters)
+    }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum ParameterType {
     U8,
     U16,
@@ -54,7 +77,21 @@ pub enum ParameterType {
     I8,
 }
 
-#[derive(Debug, PartialEq)]
+impl ParameterType {
+    pub fn from_slice_reader(
+        &self,
+        reader: &mut SliceReader,
+    ) -> Result<ParameterValue, CoordinatorError> {
+        Ok(match self {
+            ParameterType::U8 => ParameterValue::U8(reader.read_u8()?),
+            ParameterType::U16 => ParameterValue::U16(reader.read_u16_le()?),
+            ParameterType::U32 => ParameterValue::U32(reader.read_u32_le()?),
+            ParameterType::I8 => ParameterValue::I8(reader.read_i8()?),
+        })
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum ParameterValue {
     U8(u8),
     U16(u16),
