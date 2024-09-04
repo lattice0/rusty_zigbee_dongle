@@ -3,7 +3,7 @@ use crate::{
     unpi::{
         commands::{get_command_by_name, ParameterValue, ParametersValueMap},
         LenTypeInfo, MessageType, Subsystem, UnpiPacket, MAX_FRAME_SIZE,
-    }, utils::warnn,
+    }, utils::{log, warnn},
 };
 use futures::lock::Mutex;
 use serialport::SerialPort;
@@ -50,6 +50,7 @@ impl CC2531X {
             (message_type, subsystem),
             command.id,
         )?;
+        log!("<<< {:?}", packet);
         if packet.type_subsystem == (message_type, subsystem) && packet.command == command.id {
             let response = command.read_and_fill(packet.payload)?;
             Ok(response)

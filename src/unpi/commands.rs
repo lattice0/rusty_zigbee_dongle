@@ -44,7 +44,7 @@ impl Command {
                     return Err(CoordinatorError::NoCommandWithName);
                 }
 
-                log!("COMMAND: {}, VALUE {:?}", name, value);
+                //log!("COMMAND: {}, VALUE {:?}", name, value);
                 Ok::<(), CoordinatorError>(())
             })?;
         }

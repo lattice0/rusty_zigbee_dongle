@@ -3,7 +3,7 @@ use crate::{
     unpi::{
         commands::{Command, ParameterValue},
         LenTypeInfo, MessageType, Subsystem, UnpiPacket, MAX_PAYLOAD_SIZE,
-    },
+    }, utils::log,
 };
 use futures::executor::block_on;
 use serialport::SerialPort;
@@ -38,6 +38,7 @@ impl<'a> UnpiPacket<'a> {
         let h =
             UnpiPacket::from_payload((payload, LenTypeInfo::OneByte), type_subsystem, command_id)?;
         h.to_serial(&mut *serial)?;
+        log!(">>> {:?}", h);
         Ok(())
     }
 
