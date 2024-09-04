@@ -1,18 +1,13 @@
 use crate::{
     coordinator::{AddressMode, Coordinator, CoordinatorError, LedStatus, ResetType},
     unpi::{
-        commands::{get_command_by_name, ParameterValue},
+        commands::{get_command_by_name, ParameterValue, ParametersValueMap},
         LenTypeInfo, MessageType, Subsystem, UnpiPacket, MAX_FRAME_SIZE,
-    },
+    }, utils::warnn,
 };
+use futures::lock::Mutex;
 use serialport::SerialPort;
-use std::{
-    borrow::BorrowMut,
-    ops::DerefMut,
-    path::PathBuf,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 //TODO: fix this
 const MAXIMUM_ZIGBEE_PAYLOAD_SIZE: usize = 255;
@@ -40,14 +35,14 @@ impl CC2531X {
         message_type: MessageType,
         subsystem: Subsystem,
         _timeout: Option<std::time::Duration>,
-    ) -> Result<(), CoordinatorError> {
+    ) -> Result<ParametersValueMap, CoordinatorError> {
         let command =
             get_command_by_name(&subsystem, name).ok_or(CoordinatorError::NoCommandWithName)?;
         let mut buffer = [0; MAX_FRAME_SIZE];
         let len = self
             .serial
             .lock()
-            .unwrap()
+            .await
             .read(&mut buffer)
             .map_err(|_e| CoordinatorError::Io)?;
         let packet = UnpiPacket::from_payload(
@@ -56,8 +51,10 @@ impl CC2531X {
             command.id,
         )?;
         if packet.type_subsystem == (message_type, subsystem) && packet.command == command.id {
-            Ok(())
+            let response = command.read_and_fill(packet.payload)?;
+            Ok(response)
         } else {
+            warnn!("rejecting packet: {:?}", packet);
             Err(CoordinatorError::Io)
         }
     }
@@ -86,10 +83,10 @@ impl Coordinator for CC2531X {
         todo!()
     }
 
-    async fn version(&self) -> Result<usize, CoordinatorError> {
+    async fn version(&self) -> Result<Option<ParameterValue>, CoordinatorError> {
         let command = get_command_by_name(&Subsystem::Sys, "version")
             .ok_or(CoordinatorError::NoCommandWithName)?;
-        let mut lock = self.serial.lock().unwrap();
+        let mut lock = self.serial.lock().await;
         let send = UnpiPacket::from_command_to_serial_async(
             command.id,
             command,
@@ -99,7 +96,7 @@ impl Coordinator for CC2531X {
         );
         let wait = self.wait_for("version", MessageType::SRESP, Subsystem::Sys, None);
         let r = futures::try_join!(send, wait)?;
-        Ok(0)
+        Ok(r.1.get(&"majorrel").cloned())
     }
 
     async fn reset(&self, reset_type: ResetType) -> Result<(), CoordinatorError> {
@@ -110,7 +107,7 @@ impl Coordinator for CC2531X {
             ResetType::Hard => &[("type", ParameterValue::U8(0))],
         };
 
-        let mut lock = self.serial.lock().unwrap();
+        let mut lock = self.serial.lock().await;
         UnpiPacket::from_command_to_serial(
             command.id,
             command,
@@ -127,7 +124,7 @@ impl Coordinator for CC2531X {
             .ok_or(CoordinatorError::NoCommandWithName)?;
         //TODO: const firmwareControlsLed = parseInt(this.version.revision) >= 20211029;
         let firmware_controls_led = true;
-        let mut lock = self.serial.lock().unwrap();
+        let mut lock = self.serial.lock().await;
         let parameters = match led_status {
             LedStatus::Disable => {
                 if firmware_controls_led {
@@ -186,7 +183,7 @@ impl Coordinator for CC2531X {
 
         let command = get_command_by_name(&Subsystem::Zdo, "management_network_update_request")
             .ok_or(CoordinatorError::NoCommandWithName)?;
-        let mut lock = self.serial.lock().unwrap();
+        let mut lock = self.serial.lock().await;
         UnpiPacket::from_command_to_serial(
             command.id,
             command,
@@ -206,7 +203,7 @@ impl Coordinator for CC2531X {
 
         let command = get_command_by_name(&Subsystem::Zdo, "stack_tune")
             .ok_or(CoordinatorError::NoCommandWithName)?;
-        let mut lock = self.serial.lock().unwrap();
+        let mut lock = self.serial.lock().await;
         UnpiPacket::from_command_to_serial(
             command.id,
             command,

@@ -7,3 +7,10 @@ macro_rules! log {
     }
 }
 pub(crate) use log;
+
+macro_rules! warnn {
+    ($($arg:tt)*) => {
+        eprintln!($($arg)*);
+    }
+}
+pub(crate) use warnn;

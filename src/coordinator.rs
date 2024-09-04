@@ -1,4 +1,4 @@
-use crate::{unpi::commands::ParameterError, utils::map::MapError};
+use crate::{unpi::commands::{ParameterError, ParameterValue}, utils::map::MapError};
 use std::future::Future;
 
 pub trait Coordinator {
@@ -8,23 +8,16 @@ pub trait Coordinator {
 
     fn start(&self) -> impl Future<Output = Result<(), CoordinatorError>>;
     fn stop(&self) -> impl Future<Output = Result<(), CoordinatorError>>;
-    fn version(&self) -> impl Future<Output = Result<usize, CoordinatorError>>;
+    fn version(&self) -> impl Future<Output = Result<Option<ParameterValue>, CoordinatorError>>;
     fn permit_join(
         &self,
         address: u16,
         duration: std::time::Duration,
     ) -> impl Future<Output = Result<(), CoordinatorError>>;
     fn reset(&self, reset_type: ResetType) -> impl Future<Output = Result<(), CoordinatorError>>;
-    fn set_led(
-        &self,
-        led_status: LedStatus,
-    ) -> impl Future<Output = Result<(), CoordinatorError>>;
-    fn change_channel(&self, channel: u8)
-        -> impl Future<Output = Result<(), CoordinatorError>>;
-    fn set_transmit_power(
-        &self,
-        power: i8,
-    ) -> impl Future<Output = Result<(), CoordinatorError>>;
+    fn set_led(&self, led_status: LedStatus) -> impl Future<Output = Result<(), CoordinatorError>>;
+    fn change_channel(&self, channel: u8) -> impl Future<Output = Result<(), CoordinatorError>>;
+    fn set_transmit_power(&self, power: i8) -> impl Future<Output = Result<(), CoordinatorError>>;
     fn request_network_address(addr: &str) -> impl Future<Output = Result<(), CoordinatorError>>;
     #[allow(clippy::too_many_arguments)]
     fn send_zcl_frame(
@@ -69,9 +62,10 @@ pub enum CoordinatorError {
     Io,
     Parameter(ParameterError),
     InvalidChannel,
-    RequestMismatch,
     ResponseMismatch,
-    Map(MapError)
+    Map(MapError),
+    NoRequest,
+    NoResponse,
 }
 
 impl From<std::io::Error> for CoordinatorError {
