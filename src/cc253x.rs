@@ -3,7 +3,8 @@ use crate::{
     unpi::{
         commands::{get_command_by_name, ParameterValue, ParametersValueMap},
         LenTypeInfo, MessageType, Subsystem, UnpiPacket, MAX_FRAME_SIZE,
-    }, utils::{log, warnn},
+    },
+    utils::{log, warnn},
 };
 use futures::lock::Mutex;
 use serialport::SerialPort;
@@ -87,14 +88,16 @@ impl Coordinator for CC2531X {
     async fn version(&self) -> Result<Option<ParameterValue>, CoordinatorError> {
         let command = get_command_by_name(&Subsystem::Sys, "version")
             .ok_or(CoordinatorError::NoCommandWithName)?;
-        let mut lock = self.serial.lock().await;
-        let send = UnpiPacket::from_command_to_serial_async(
-            command.id,
-            command,
-            &[],
-            (MessageType::SREQ, Subsystem::Sys),
-            &mut **lock,
-        );
+        let send = async {
+            let mut lock = self.serial.lock().await;
+            UnpiPacket::from_command_to_serial_async(
+                command.id,
+                command,
+                &[],
+                (MessageType::SREQ, Subsystem::Sys),
+                &mut **lock,
+            ).await
+        };
         let wait = self.wait_for("version", MessageType::SRESP, Subsystem::Sys, None);
         let r = futures::try_join!(send, wait)?;
         Ok(r.1.get(&"majorrel").cloned())
