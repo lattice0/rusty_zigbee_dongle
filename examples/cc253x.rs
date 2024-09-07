@@ -20,7 +20,7 @@ fn main() {
         let b = async {
             println!("version: {:?}", cc2531.version().await);
         };
-        futures::join!(a, b);
+        futures::join!(b, a);
     };
     let executor = Executor::default();
 

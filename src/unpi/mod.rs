@@ -1,5 +1,5 @@
 use crate::utils::slice_reader::SliceReader;
-use std::io::Write;
+use std::{future::Future, io::Write};
 
 pub mod commands;
 pub mod subsystems;
@@ -22,6 +22,14 @@ pub struct UnpiPacket<'a> {
     pub command: u8,
     pub payload: &'a [u8],
     pub fcs: u8,
+}
+
+pub trait UnpiPacketSink {
+    fn write(&mut self, packet: &UnpiPacket) -> impl Future<Output = Result<(), UnpiPacketError>>;
+}
+
+pub trait UnpiPacketSource {
+    fn read(&mut self) -> impl Future<Output = Result<UnpiPacket, UnpiPacketError>>;
 }
 
 struct Wrapped<T>(T);

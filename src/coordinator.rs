@@ -58,6 +58,7 @@ pub enum ResetType {
 pub enum CoordinatorError {
     SerialOpen,
     SerialWrite,
+    SerialRead,
     NoCommandWithName,
     Io,
     Parameter(ParameterError),
@@ -66,6 +67,7 @@ pub enum CoordinatorError {
     Map(MapError),
     NoRequest,
     NoResponse,
+    
 }
 
 impl From<std::io::Error> for CoordinatorError {

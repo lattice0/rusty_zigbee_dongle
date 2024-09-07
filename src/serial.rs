@@ -2,14 +2,79 @@ use crate::{
     coordinator::CoordinatorError,
     unpi::{
         commands::{Command, ParameterValue},
-        LenTypeInfo, MessageType, Subsystem, UnpiPacket, MAX_PAYLOAD_SIZE,
-    }, utils::log,
+        LenTypeInfo, MessageType, Subsystem, UnpiPacket, UnpiPacketSink, MAX_PAYLOAD_SIZE,
+    },
+    utils::log,
 };
-use futures::executor::block_on;
+use futures::channel::oneshot;
+use futures::{
+    channel::oneshot::{Receiver, Sender},
+    lock::Mutex,
+    AsyncReadExt, AsyncWrite, AsyncWriteExt,
+};
 use serialport::SerialPort;
+use std::{future::Future, sync::Arc};
+use futures::task::Spawn;
+
+pub struct SimpleSerialPort {
+    read: Arc<Mutex<Box<dyn SerialPort>>>,
+    write: Arc<Mutex<Box<dyn SerialPort>>>,
+    tx: Sender<UnpiPacket<'static>>,
+    rx: Receiver<UnpiPacket<'static>>,
+}
+
+impl SimpleSerialPort {
+    pub fn new(path: &str, baud_rate: u32) -> Result<Self, CoordinatorError> {
+        let (tx, rx) = oneshot::channel();
+        Ok(SimpleSerialPort {
+            read: Arc::new(Mutex::new(
+                serialport::new(path, baud_rate)
+                    .timeout(std::time::Duration::from_millis(10))
+                    .open()
+                    .map_err(|_e| CoordinatorError::SerialOpen)?,
+            )),
+            write: Arc::new(Mutex::new(
+                serialport::new(path, baud_rate)
+                    .timeout(std::time::Duration::from_millis(10))
+                    .open()
+                    .map_err(|_e| CoordinatorError::SerialOpen)?,
+            )),
+            tx,
+            rx,
+        })
+    }
+
+    pub async fn start(&self) -> Result<(), CoordinatorError> {
+        let mut read = self.read.lock().await;
+        let mut write = self.write.lock().await;
+        let (tx, rx) = (self.tx, self.rx);
+        let mut buffer = [0u8; 256];
+        let receive = async {
+            loop {
+                let len = read.read(&mut buffer).map_err(|_e| CoordinatorError::SerialRead)?;
+                let packet = UnpiPacket::from_payload(
+                    (&buffer[..len], LenTypeInfo::OneByte),
+                    (MessageType::SREQ, Subsystem::Sys),
+                    0,
+                )?;
+                log!("<<< {:?}", packet);
+                tx.send(packet).map_err(|_e| CoordinatorError::SerialWrite)?;
+            }
+        };
+        let send = async {
+            loop {
+                let packet = rx.await.map_err(|_e| CoordinatorError::SerialWrite)?;
+                let mut buffer = [0u8; 256];
+                packet.to_bytes(&mut buffer)?;
+                write.write_all(buffer).map_err(|_e| CoordinatorError::SerialWrite)?;
+                
+            }
+        };
+        todo!()
+    }
+}
 
 impl<'a> UnpiPacket<'a> {
-
     /// Serialized the packet to the serial port
     pub fn to_serial<S: SerialPort + ?Sized>(
         &self,
@@ -52,8 +117,6 @@ impl<'a> UnpiPacket<'a> {
         type_subsystem: (MessageType, Subsystem),
         serial: &mut S,
     ) -> Result<(), CoordinatorError> {
-        block_on(async move {
-            Self::from_command_to_serial(command_id, command, parameters, type_subsystem, serial)
-        })
+        Self::from_command_to_serial(command_id, command, parameters, type_subsystem, serial)
     }
 }
