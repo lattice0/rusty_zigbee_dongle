@@ -1,72 +1,79 @@
 use crate::{
     coordinator::{AddressMode, Coordinator, CoordinatorError, LedStatus, ResetType},
+    serial::{simple_serial_port::SimpleSerialPort, SimpleSerial},
+    subscription::{Predicate, Subscription, SubscriptionService},
     unpi::{
-        commands::{get_command_by_name, ParameterValue, ParametersValueMap},
-        LenTypeInfo, MessageType, Subsystem, UnpiPacket, MAX_FRAME_SIZE,
+        commands::{get_command_by_name, ParameterValue},
+        LenTypeInfo, MessageType, Subsystem, UnpiPacket,
     },
-    utils::{log, warnn},
+    utils::log,
 };
-use futures::lock::Mutex;
-use serialport::SerialPort;
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use futures::{
+    channel::oneshot::{self, Receiver, Sender},
+    lock::Mutex,
+};
+use std::{path::PathBuf, sync::Arc};
 
 //TODO: fix this
 const MAXIMUM_ZIGBEE_PAYLOAD_SIZE: usize = 255;
 
-pub struct CC2531X {
+type Container = Vec<u8>;
+
+pub struct CC253X<S: SimpleSerial> {
     _supports_led: Option<bool>,
-    read: Arc<Mutex<Box<dyn SerialPort>>>,
-    write: Arc<Mutex<Box<dyn SerialPort>>>,
+    subscriptions: Arc<Mutex<SubscriptionService<UnpiPacket<Container>>>>,
+    serial: Arc<Mutex<S>>,
 }
 
-impl CC2531X {
+impl CC253X<SimpleSerialPort> {
     pub fn from_path(path: PathBuf, baud_rate: u32) -> Result<Self, CoordinatorError> {
-        let serial = serialport::new(path.to_str().unwrap(), baud_rate)
-            .timeout(Duration::from_millis(10))
-            .open()
-            .map_err(|_e| CoordinatorError::SerialOpen)?;
+        let mut serial = SimpleSerialPort::new(
+            path.to_str()
+                .ok_or(CoordinatorError::Io("not a path".to_string()))?,
+            baud_rate,
+        )?;
+        serial.start()?;
+        let subscriptions = SubscriptionService::new();
         Ok(Self {
-            read: Arc::new(Mutex::new(
-                serial.try_clone().map_err(|_e| CoordinatorError::Io)?,
-            )),
-            write: Arc::new(Mutex::new(serial)),
+            serial: Arc::new(Mutex::new(serial)),
             _supports_led: None,
+            subscriptions: Arc::new(Mutex::new(subscriptions)),
         })
     }
+}
 
+impl<S: SimpleSerial> CC253X<S> {
     pub async fn wait_for(
         &self,
         name: &str,
         message_type: MessageType,
         subsystem: Subsystem,
         _timeout: Option<std::time::Duration>,
-    ) -> Result<ParametersValueMap, CoordinatorError> {
+    ) -> Result<UnpiPacket<Container>, CoordinatorError> {
         log!("waiting for {:?}", name);
         let command =
             get_command_by_name(&subsystem, name).ok_or(CoordinatorError::NoCommandWithName)?;
-        let mut buffer = [0; MAX_FRAME_SIZE];
-        let lock = self.read.lock();
-        let len = lock
+        let subscriptions = self.subscriptions.clone();
+        let (tx, rx): (
+            Sender<UnpiPacket<Container>>,
+            Receiver<UnpiPacket<Container>>,
+        ) = oneshot::channel();
+        let packet = rx.await.map_err(|_| CoordinatorError::SubscriptionError)?;
+        subscriptions
+            .lock()
             .await
-            .read(&mut buffer)
-            .map_err(|_e| CoordinatorError::Io)?;
-        let packet = UnpiPacket::from_payload(
-            (&buffer[..len], LenTypeInfo::OneByte),
-            (message_type, subsystem),
-            command.id,
-        )?;
-        log!("<<< {:?}", packet);
-        if packet.type_subsystem == (message_type, subsystem) && packet.command == command.id {
-            let response = command.read_and_fill(packet.payload)?;
-            Ok(response)
-        } else {
-            warnn!("rejecting packet: {:?}", packet);
-            Err(CoordinatorError::Io)
-        }
+            .subscribe(Subscription::SingleShot(
+                Predicate(Box::new(move |packet: &UnpiPacket<Container>| {
+                    packet.type_subsystem == (message_type, subsystem)
+                        && packet.command == command.id
+                })),
+                tx,
+            ));
+        Ok(packet)
     }
 }
 
-impl Coordinator for CC2531X {
+impl<S: SimpleSerial> Coordinator for CC253X<S> {
     type ZclFrame = psila_data::cluster_library::ClusterLibraryHeader;
 
     type ZclPayload<'a> = ([u8; MAXIMUM_ZIGBEE_PAYLOAD_SIZE], usize);
@@ -92,20 +99,21 @@ impl Coordinator for CC2531X {
     async fn version(&self) -> Result<Option<ParameterValue>, CoordinatorError> {
         let command = get_command_by_name(&Subsystem::Sys, "version")
             .ok_or(CoordinatorError::NoCommandWithName)?;
+        let serial = self.serial.clone();
         let send = async {
-            let mut lock = self.write.lock().await;
-            UnpiPacket::from_command_to_serial_async(
-                command.id,
-                command,
-                &[],
+            let packet = UnpiPacket::from_command_owned(
+                LenTypeInfo::OneByte,
                 (MessageType::SREQ, Subsystem::Sys),
-                &mut **lock,
-            )
-            .await
+                &[],
+                command,
+            )?;
+            serial.lock().await.write(&packet).await?;
+            Ok::<(), CoordinatorError>(())
         };
         let wait = self.wait_for("version", MessageType::SRESP, Subsystem::Sys, None);
-        let r = futures::try_join!(send, wait)?;
-        Ok(r.1.get(&"majorrel").cloned())
+        let (_, packet) = futures::try_join!(send, wait)?;
+        let r = command.read_and_fill(packet.payload.as_slice())?;
+        Ok(r.get(&"majorrel").cloned())
     }
 
     async fn reset(&self, reset_type: ResetType) -> Result<(), CoordinatorError> {
@@ -116,16 +124,15 @@ impl Coordinator for CC2531X {
             ResetType::Hard => &[("type", ParameterValue::U8(0))],
         };
 
-        let mut lock = self.write.lock().await;
-        UnpiPacket::from_command_to_serial(
-            command.id,
-            command,
+        let serial = self.serial.clone();
+        let packet = UnpiPacket::from_command_owned(
+            LenTypeInfo::OneByte,
+            (MessageType::SREQ, Subsystem::Sys),
             parameters,
-            (MessageType::SREQ, Subsystem::Util),
-            &mut **lock,
+            command,
         )?;
-
-        Ok(())
+        serial.lock().await.write(&packet).await?;
+        Ok::<(), CoordinatorError>(())
     }
 
     async fn set_led(&self, led_status: LedStatus) -> Result<(), CoordinatorError> {
@@ -133,7 +140,7 @@ impl Coordinator for CC2531X {
             .ok_or(CoordinatorError::NoCommandWithName)?;
         //TODO: const firmwareControlsLed = parseInt(this.version.revision) >= 20211029;
         let firmware_controls_led = true;
-        let mut lock = self.write.lock().await;
+
         let parameters = match led_status {
             LedStatus::Disable => {
                 if firmware_controls_led {
@@ -158,14 +165,14 @@ impl Coordinator for CC2531X {
             ],
         };
 
-        UnpiPacket::from_command_to_serial(
-            command.id,
-            command,
-            parameters,
+        let serial = self.serial.clone();
+        let packet = UnpiPacket::from_command_owned(
+            LenTypeInfo::OneByte,
             (MessageType::SREQ, Subsystem::Util),
-            &mut **lock,
+            parameters,
+            command,
         )?;
-
+        serial.lock().await.write(&packet).await?;
         Ok(())
     }
 
@@ -192,14 +199,15 @@ impl Coordinator for CC2531X {
 
         let command = get_command_by_name(&Subsystem::Zdo, "management_network_update_request")
             .ok_or(CoordinatorError::NoCommandWithName)?;
-        let mut lock = self.write.lock().await;
-        UnpiPacket::from_command_to_serial(
-            command.id,
-            command,
-            parameters,
+
+        let serial = self.serial.clone();
+        let packet = UnpiPacket::from_command_owned(
+            LenTypeInfo::OneByte,
             (MessageType::SREQ, Subsystem::Zdo),
-            &mut **lock,
+            parameters,
+            command,
         )?;
+        serial.lock().await.write(&packet).await?;
 
         Ok(())
     }
@@ -212,14 +220,15 @@ impl Coordinator for CC2531X {
 
         let command = get_command_by_name(&Subsystem::Zdo, "stack_tune")
             .ok_or(CoordinatorError::NoCommandWithName)?;
-        let mut lock = self.write.lock().await;
-        UnpiPacket::from_command_to_serial(
-            command.id,
-            command,
-            parameters,
+
+        let serial = self.serial.clone();
+        let packet = UnpiPacket::from_command_owned(
+            LenTypeInfo::OneByte,
             (MessageType::SREQ, Subsystem::Zdo),
-            &mut **lock,
+            parameters,
+            command,
         )?;
+        serial.lock().await.write(&packet).await?;
         Ok(())
     }
 

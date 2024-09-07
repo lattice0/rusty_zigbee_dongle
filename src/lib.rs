@@ -4,6 +4,7 @@ pub mod utils;
 #[cfg(feature="cc2531x")]
 pub mod cc253x;
 pub mod serial;
+pub mod subscription;
 
 
 #[cfg(test)]

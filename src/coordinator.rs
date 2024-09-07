@@ -56,23 +56,24 @@ pub enum ResetType {
 
 #[derive(Debug)]
 pub enum CoordinatorError {
-    SerialOpen,
+    SerialOpen(String),
     SerialWrite,
     SerialRead,
     NoCommandWithName,
-    Io,
+    Io(String),
     Parameter(ParameterError),
     InvalidChannel,
     ResponseMismatch,
     Map(MapError),
     NoRequest,
     NoResponse,
-    
+    SerialChannelMissing,
+    SubscriptionError
 }
 
 impl From<std::io::Error> for CoordinatorError {
-    fn from(_e: std::io::Error) -> Self {
-        CoordinatorError::Io
+    fn from(e: std::io::Error) -> Self {
+        CoordinatorError::Io(e.to_string())
     }
 }
 
