@@ -6,70 +6,86 @@ use crate::{
     },
     utils::log,
 };
-use futures::channel::oneshot;
+use futures::{channel::mpsc, SinkExt};
+use futures::task::Spawn;
 use futures::{
-    channel::oneshot::{Receiver, Sender},
+    channel::mpsc::{Receiver, Sender},
     lock::Mutex,
     AsyncReadExt, AsyncWrite, AsyncWriteExt,
 };
 use serialport::SerialPort;
-use std::{future::Future, sync::Arc};
-use futures::task::Spawn;
+use std::{future::Future, sync::Arc, thread::JoinHandle};
 
 pub struct SimpleSerialPort {
-    read: Arc<Mutex<Box<dyn SerialPort>>>,
-    write: Arc<Mutex<Box<dyn SerialPort>>>,
-    tx: Sender<UnpiPacket<'static>>,
-    rx: Receiver<UnpiPacket<'static>>,
+    path: String,
+    baud_rate: u32,
+    // from the serial port to the coordinator
+    serial_to: (
+        Option<Sender<UnpiPacket<'static>>>,
+        Option<Receiver<UnpiPacket<'static>>>,
+    ),
+    // from the coordinator to the serial port
+    to_serial: (
+        Option<Sender<UnpiPacket<'static>>>,
+        Option<Receiver<UnpiPacket<'static>>>,
+    ),
+    read_thread: Option<JoinHandle<()>>,
+    write_thread: Option<JoinHandle<()>>,
 }
 
 impl SimpleSerialPort {
     pub fn new(path: &str, baud_rate: u32) -> Result<Self, CoordinatorError> {
-        let (tx, rx) = oneshot::channel();
+        let serial_to = mpsc::channel(10);
+        let serial_to = (Some(serial_to.0), Some(serial_to.1));
+        let to_serial = mpsc::channel(10);
+        let to_serial = (Some(to_serial.0), Some(to_serial.1));
         Ok(SimpleSerialPort {
-            read: Arc::new(Mutex::new(
-                serialport::new(path, baud_rate)
-                    .timeout(std::time::Duration::from_millis(10))
-                    .open()
-                    .map_err(|_e| CoordinatorError::SerialOpen)?,
-            )),
-            write: Arc::new(Mutex::new(
-                serialport::new(path, baud_rate)
-                    .timeout(std::time::Duration::from_millis(10))
-                    .open()
-                    .map_err(|_e| CoordinatorError::SerialOpen)?,
-            )),
-            tx,
-            rx,
+            path: path.to_string(),
+            baud_rate,
+            serial_to,
+            to_serial,
+            read_thread: None,
+            write_thread: None,
         })
     }
 
-    pub async fn start(&self) -> Result<(), CoordinatorError> {
-        let mut read = self.read.lock().await;
-        let mut write = self.write.lock().await;
-        let (tx, rx) = (self.tx, self.rx);
-        let mut buffer = [0u8; 256];
-        let receive = async {
+    pub async fn start(&mut self) -> Result<(), CoordinatorError> {
+        let mut read = serialport::new(self.path.clone(), self.baud_rate)
+            .timeout(std::time::Duration::from_millis(10))
+            .open()
+            .map_err(|_e| CoordinatorError::SerialOpen)?;
+        let mut write = serialport::new(self.path.clone(), self.baud_rate)
+            .timeout(std::time::Duration::from_millis(10))
+            .open()
+            .map_err(|_e| CoordinatorError::SerialOpen)?;
+
+        let tx = self.serial_to.0.take().unwrap();
+        let receive_from_serial_send_to_channel = move || {
+            let tx = tx;
             loop {
-                let len = read.read(&mut buffer).map_err(|_e| CoordinatorError::SerialRead)?;
+                let mut buffer = [0u8; 256];
+                let len = read
+                    .read(&mut buffer)
+                    .map_err(|_e| CoordinatorError::SerialRead)
+                    .unwrap();
                 let packet = UnpiPacket::from_payload(
                     (&buffer[..len], LenTypeInfo::OneByte),
                     (MessageType::SREQ, Subsystem::Sys),
                     0,
-                )?;
+                )
+                .unwrap();
                 log!("<<< {:?}", packet);
-                tx.send(packet).map_err(|_e| CoordinatorError::SerialWrite)?;
+                tx.send(packet)
+                    .map_err(|_e| CoordinatorError::SerialWrite)
+                    .unwrap();
             }
         };
-        let send = async {
-            loop {
-                let packet = rx.await.map_err(|_e| CoordinatorError::SerialWrite)?;
-                let mut buffer = [0u8; 256];
-                packet.to_bytes(&mut buffer)?;
-                write.write_all(buffer).map_err(|_e| CoordinatorError::SerialWrite)?;
-                
-            }
+        let rx = self.to_serial.1.take().unwrap();
+        let receive_from_channel_send_to_serial = || loop {
+            let packet = rx.recv().unwrap();
+            todo!()
         };
+
         todo!()
     }
 }
