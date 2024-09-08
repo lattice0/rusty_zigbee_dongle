@@ -80,7 +80,6 @@ impl SubscriptionSerial for SimpleSerialPort {
                     log!("<<< {:?}", packet);
                     let send = async { subscription_service.lock().await.notify(packet) };
                     block_on(send).map_err(|_| SerialThreadError::SubscriptionWrite)?;
-                    println!("sent!!");
                 }
             }
         };

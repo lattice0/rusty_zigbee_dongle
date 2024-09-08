@@ -56,22 +56,17 @@ impl<T: Clone + PartialEq + std::fmt::Debug> SubscriptionService<T> {
             .map(|x| (x.0, x.1.is_single_shot()))
         {
             if is_single_shot {
-                println!("found single shot subscription");
                 let subscription = self
                     .subscriptions
                     .remove(position)
                     .ok_or(SubscriptionError::MissingSubscription)?;
-                println!("subscription: {:?}", subscription);
-                println!("subscriptions: {:?}", self.subscriptions);
                 let tx = subscription
                     .to_single_shot()
                     .ok_or(SubscriptionError::NotSingleShot)?
                     .1;
                 tx.send(value.clone())
                     .map_err(|_| SubscriptionError::Send)?;
-                log!("sent packet");
             } else {
-                println!("found multiple shot subscription");
                 let subscription = self.subscriptions.get_mut(position).unwrap();
                 match subscription {
                     Subscription::SingleShot(_, _) => return Err(SubscriptionError::Unreachable),
