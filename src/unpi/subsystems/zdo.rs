@@ -33,4 +33,15 @@ pub const COMMANDS_ZDO: &[Command] = &[
         ])),
         response: Some(StaticMap::new(&[("status", ParameterType::U8)])),
     },
+    Command {
+        name: "exit_route_disc",
+        id: 69, // TODO: 0x0038 => 56?? (from zStackAdapter.ts)
+        command_type: MessageType::SREQ,
+        request: Some(StaticMap::new(&[
+            ("destination_address", ParameterType::U16),
+            ("options", ParameterType::U8),
+            ("radius", ParameterType::U8),
+        ])),
+        response: Some(StaticMap::new(&[("status", ParameterType::U8)])),
+    },
 ];

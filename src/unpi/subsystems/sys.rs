@@ -32,7 +32,8 @@ pub const COMMANDS_SYS: &[Command] = &[
             ("majorrel", ParameterType::U8),
             ("minorrel", ParameterType::U8),
             ("maintrel", ParameterType::U8),
-            ("revision", ParameterType::U32),])),
+            ("revision", ParameterType::U32),
+        ])),
     },
     Command {
         name: "stack_tune",

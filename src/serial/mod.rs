@@ -80,5 +80,5 @@ pub enum SerialThreadError {
     SerialWrite,
     MalformedPacket,
     SubscriptionWrite,
-    PacketParse
+    PacketParse,
 }

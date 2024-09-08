@@ -12,7 +12,6 @@ fn main() {
 
         // Not all firmware versions support LED write as far as I understood
         let a = async {
-            
             cc2531.set_led(LedStatus::On).await.unwrap();
             Ok::<(), CoordinatorError>(())
         };

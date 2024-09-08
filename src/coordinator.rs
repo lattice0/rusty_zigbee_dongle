@@ -20,6 +20,11 @@ pub trait Coordinator {
     fn is_inter_pan_mode(&self) -> impl Future<Output = bool>;
     fn reset(&self, reset_type: ResetType) -> impl Future<Output = Result<(), CoordinatorError>>;
     fn set_led(&self, led_status: LedStatus) -> impl Future<Output = Result<(), CoordinatorError>>;
+    fn discover_route(
+        &self,
+        address: Option<u16>,
+        wait: Option<bool>,
+    ) -> impl Future<Output = Result<(), CoordinatorError>>;
     fn change_channel(&self, channel: u8) -> impl Future<Output = Result<(), CoordinatorError>>;
     fn set_transmit_power(&self, power: i8) -> impl Future<Output = Result<(), CoordinatorError>>;
     fn request_network_address(addr: &str) -> impl Future<Output = Result<(), CoordinatorError>>;
@@ -35,6 +40,10 @@ pub trait Coordinator {
         disable_recovery: bool,
         source_endpoint: Option<u32>,
     ) -> impl Future<Output = Result<Option<Self::ZclPayload<'static>>, CoordinatorError>>;
+    fn set_on_zcl_frame_callback(
+        &mut self,
+        on_zcl_frame: Box<dyn Fn() -> Result<(), CoordinatorError>>,
+    ) -> impl Future<Output = Result<(), CoordinatorError>>;
 }
 
 pub enum AddressMode {

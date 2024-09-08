@@ -14,7 +14,7 @@ impl<T> Subscription<T> {
         matches!(self, Subscription::SingleShot(_, _))
     }
 
-    fn to_single_shot(self) -> Option<(Predicate<T>, futures::channel::oneshot::Sender<T>)> {
+    fn into_single_shot(self) -> Option<(Predicate<T>, futures::channel::oneshot::Sender<T>)> {
         match self {
             Subscription::SingleShot(predicate, tx) => Some((predicate, tx)),
             _ => None,
@@ -30,6 +30,12 @@ impl<T> std::fmt::Debug for Predicate<T> {
 
 pub struct SubscriptionService<T> {
     subscriptions: VecDeque<Subscription<T>>,
+}
+
+impl<T: Clone + PartialEq + std::fmt::Debug> Default for SubscriptionService<T> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<T: Clone + PartialEq + std::fmt::Debug> SubscriptionService<T> {
@@ -61,7 +67,7 @@ impl<T: Clone + PartialEq + std::fmt::Debug> SubscriptionService<T> {
                     .remove(position)
                     .ok_or(SubscriptionError::MissingSubscription)?;
                 let tx = subscription
-                    .to_single_shot()
+                    .into_single_shot()
                     .ok_or(SubscriptionError::NotSingleShot)?
                     .1;
                 tx.send(value.clone())

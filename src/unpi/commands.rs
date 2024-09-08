@@ -6,7 +6,6 @@ use crate::{
 use std::io::Write;
 
 pub const MAX_COMMAND_SIZE: usize = 15;
-
 pub type ParametersValueMap = StaticMap<MAX_COMMAND_SIZE, &'static str, ParameterValue>;
 pub type ParametersTypeMap = StaticMap<MAX_COMMAND_SIZE, &'static str, ParameterType>;
 

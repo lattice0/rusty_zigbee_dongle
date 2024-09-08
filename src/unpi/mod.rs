@@ -3,6 +3,7 @@ use commands::{Command, ParameterValue};
 use std::{future::Future, io::Write};
 
 pub mod commands;
+pub mod constants;
 pub mod subsystems;
 
 pub const START_OF_FRAME: u8 = 0xFE;
@@ -369,8 +370,8 @@ impl<'a> UnpiPacket<&'a [u8]> {
 
     pub fn to_owned(&self) -> UnpiPacket<Vec<u8>> {
         UnpiPacket {
-            len: self.len.clone(),
-            type_subsystem: self.type_subsystem.clone(),
+            len: self.len,
+            type_subsystem: self.type_subsystem,
             command: self.command,
             payload: self.payload.to_vec(),
             fcs: self.fcs,
@@ -390,7 +391,7 @@ where
             LenType::TwoByte(_) => output.write_all(&self.len.to_le_bytes())?,
         };
         let payload_len = self.len.size();
-        output.write_all(&[Into::<Wrapped<u8>>::into(self.type_subsystem.clone()).0])?;
+        output.write_all(&[Into::<Wrapped<u8>>::into(self.type_subsystem).0])?;
         output.write_all(&[self.command])?;
         output.write_all(&self.payload.as_ref()[0..payload_len])?;
         output.write_all(&[self.fcs])?;

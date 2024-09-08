@@ -21,6 +21,7 @@ pub struct CC253X<S: SubscriptionSerial> {
     _supports_led: Option<bool>,
     subscriptions: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
     serial: Arc<Mutex<S>>,
+    on_zcl_frame_callback: Option<Box<dyn Fn() -> Result<(), CoordinatorError>>>,
 }
 
 impl CC253X<SimpleSerialPort> {
@@ -38,6 +39,7 @@ impl CC253X<SimpleSerialPort> {
             serial: Arc::new(Mutex::new(serial)),
             _supports_led: None,
             subscriptions: subscriptions.clone(),
+            on_zcl_frame_callback: None,
         })
     }
 }
@@ -268,5 +270,31 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
         ];
         self.request("management_permit_join_request", Subsystem::Zdo, parameters)
             .await
+    }
+
+    async fn discover_route(
+        &self,
+        _address: Option<u16>,
+        _wait: Option<bool>,
+    ) -> Result<(), CoordinatorError> {
+        let parameters = &[
+            ("destination_address", ParameterValue::U16(0)),
+            ("options", ParameterValue::U8(0)),
+            (
+                "radius",
+                ParameterValue::U8(crate::unpi::constants::af::DEFAULT_RADIUS),
+            ),
+        ];
+
+        self.request("exit_route_disc", Subsystem::Zdo, parameters)
+            .await
+    }
+
+    async fn set_on_zcl_frame_callback(
+        &mut self,
+        on_zcl_frame: Box<dyn Fn() -> Result<(), CoordinatorError>>,
+    ) -> Result<(), CoordinatorError> {
+        self.on_zcl_frame_callback = Some(on_zcl_frame);
+        Ok(())
     }
 }

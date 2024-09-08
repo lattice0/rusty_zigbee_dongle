@@ -55,10 +55,7 @@ impl<
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
-        self.0.iter().filter_map(|x| match x {
-            Some((k, v)) => Some((k, v)),
-            None => None,
-        })
+        self.0.iter().filter_map(|x| x.as_ref().map(|(k, v)| (k, v)))
     }
 
     /// Inserts and returns the value previously associated with the key if it existed.
