@@ -1,12 +1,11 @@
 use super::{subsystems::SUBSYSTEMS, MessageType, Subsystem};
 use crate::{
     coordinator::CoordinatorError,
-    utils::{log, map::StaticMap, slice_reader::SliceReader},
+    utils::{map::StaticMap, slice_reader::SliceReader},
 };
 use std::io::Write;
 
 pub const MAX_COMMAND_SIZE: usize = 15;
-
 pub type ParametersValueMap = StaticMap<MAX_COMMAND_SIZE, &'static str, ParameterValue>;
 pub type ParametersTypeMap = StaticMap<MAX_COMMAND_SIZE, &'static str, ParameterType>;
 
@@ -146,13 +145,13 @@ pub fn get_command_by_id(subsystem: &Subsystem, id: u8) -> Option<&'static Comma
 #[derive(Debug)]
 pub enum ParameterError {
     InvalidParameter,
-    Io,
+    Io(String),
     NoCommandWithName,
 }
 
 impl From<std::io::Error> for ParameterError {
-    fn from(_: std::io::Error) -> Self {
-        ParameterError::Io
+    fn from(e: std::io::Error) -> Self {
+        ParameterError::Io(e.to_string())
     }
 }
 

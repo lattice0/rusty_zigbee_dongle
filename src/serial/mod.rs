@@ -3,13 +3,30 @@ use crate::{
     unpi::{
         commands::{Command, ParameterValue},
         LenTypeInfo, MessageType, Subsystem, UnpiPacket, MAX_PAYLOAD_SIZE,
-    }, utils::log,
+    },
+    utils::log,
 };
-use futures::executor::block_on;
 use serialport::SerialPort;
+use std::future::Future;
 
-impl<'a> UnpiPacket<'a> {
+pub mod simple_serial_port;
 
+pub trait SubscriptionSerial {
+    type Sender;
+    type Receiver;
+
+    fn write(
+        &mut self,
+        packet: &UnpiPacket<Vec<u8>>,
+    ) -> impl Future<Output = Result<(), CoordinatorError>>;
+
+    fn start(&mut self) -> Result<(), CoordinatorError>;
+}
+
+impl<T> UnpiPacket<T>
+where
+    T: AsRef<[u8]>,
+{
     /// Serialized the packet to the serial port
     pub fn to_serial<S: SerialPort + ?Sized>(
         &self,
@@ -52,8 +69,16 @@ impl<'a> UnpiPacket<'a> {
         type_subsystem: (MessageType, Subsystem),
         serial: &mut S,
     ) -> Result<(), CoordinatorError> {
-        block_on(async move {
-            Self::from_command_to_serial(command_id, command, parameters, type_subsystem, serial)
-        })
+        Self::from_command_to_serial(command_id, command, parameters, type_subsystem, serial)
     }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum SerialThreadError {
+    SerialOpen,
+    SerialRead,
+    SerialWrite,
+    MalformedPacket,
+    SubscriptionWrite,
+    PacketParse,
 }

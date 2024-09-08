@@ -290,11 +290,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pasts"
-version = "0.14.3"
-source = "git+https://github.com/ardaku/pasts?rev=654db2358daddbf95543b5571a76d43daa1231bd#654db2358daddbf95543b5571a76d43daa1231bd"
-
-[[package]]
 name = "pin-project-lite"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -355,7 +350,6 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "ieee802154 0.6.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "pasts",
  "psila-data",
  "serialport",
 ]

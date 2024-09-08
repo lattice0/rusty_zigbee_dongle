@@ -1,4 +1,7 @@
-use crate::{unpi::commands::{ParameterError, ParameterValue}, utils::map::MapError};
+use crate::{
+    unpi::commands::{ParameterError, ParameterValue},
+    utils::map::MapError,
+};
 use std::future::Future;
 
 pub trait Coordinator {
@@ -11,11 +14,17 @@ pub trait Coordinator {
     fn version(&self) -> impl Future<Output = Result<Option<ParameterValue>, CoordinatorError>>;
     fn permit_join(
         &self,
-        address: u16,
         duration: std::time::Duration,
+        address: Option<u16>,
     ) -> impl Future<Output = Result<(), CoordinatorError>>;
+    fn is_inter_pan_mode(&self) -> impl Future<Output = bool>;
     fn reset(&self, reset_type: ResetType) -> impl Future<Output = Result<(), CoordinatorError>>;
     fn set_led(&self, led_status: LedStatus) -> impl Future<Output = Result<(), CoordinatorError>>;
+    fn discover_route(
+        &self,
+        address: Option<u16>,
+        wait: Option<bool>,
+    ) -> impl Future<Output = Result<(), CoordinatorError>>;
     fn change_channel(&self, channel: u8) -> impl Future<Output = Result<(), CoordinatorError>>;
     fn set_transmit_power(&self, power: i8) -> impl Future<Output = Result<(), CoordinatorError>>;
     fn request_network_address(addr: &str) -> impl Future<Output = Result<(), CoordinatorError>>;
@@ -31,6 +40,10 @@ pub trait Coordinator {
         disable_recovery: bool,
         source_endpoint: Option<u32>,
     ) -> impl Future<Output = Result<Option<Self::ZclPayload<'static>>, CoordinatorError>>;
+    fn set_on_zcl_frame_callback(
+        &mut self,
+        on_zcl_frame: Box<dyn Fn() -> Result<(), CoordinatorError>>,
+    ) -> impl Future<Output = Result<(), CoordinatorError>>;
 }
 
 pub enum AddressMode {
@@ -56,21 +69,26 @@ pub enum ResetType {
 
 #[derive(Debug)]
 pub enum CoordinatorError {
-    SerialOpen,
+    SerialOpen(String),
     SerialWrite,
+    SerialRead,
     NoCommandWithName,
-    Io,
+    Io(String),
     Parameter(ParameterError),
     InvalidChannel,
     ResponseMismatch,
     Map(MapError),
     NoRequest,
     NoResponse,
+    SerialChannelMissing,
+    SubscriptionError,
+    InterpanMode,
+    DurationTooLong,
 }
 
 impl From<std::io::Error> for CoordinatorError {
-    fn from(_e: std::io::Error) -> Self {
-        CoordinatorError::Io
+    fn from(e: std::io::Error) -> Self {
+        CoordinatorError::Io(e.to_string())
     }
 }
 
