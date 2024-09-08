@@ -1,9 +1,10 @@
-use pasts::Executor;
+//use pasts::Executor;
 use rusty_zigbee_dongle::{
     cc253x::CC253X,
-    coordinator::{Coordinator, LedStatus},
+    coordinator::{Coordinator, CoordinatorError, LedStatus},
 };
 use std::path::PathBuf;
+use futures::executor::block_on;
 
 fn main() {
     let looping = async {
@@ -17,17 +18,15 @@ fn main() {
                 cc2531.set_led(LedStatus::Off).await.unwrap();
                 std::thread::sleep(std::time::Duration::from_millis(500));
             }
+            //Ok::<(), CoordinatorError>(())
         };
         let b = async {
             println!("version: {:?}", cc2531.version().await);
+            Ok::<(), CoordinatorError>(())
         };
-        futures::join!(b, a);
+        futures::join!(a,b)
     };
-    let executor = Executor::default();
-
-    // Calling `block_on()` starting executing queued tasks.
-    executor.clone().block_on(async move {
-        // Spawn tasks (without being queued)
-        executor.spawn_boxed(looping);
-    })
+    
+    let v = block_on(looping);
+    println!("version: {:?}", v);
 }

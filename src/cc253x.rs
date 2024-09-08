@@ -56,27 +56,24 @@ impl<S: SubscriptionSerial> CC253X<S> {
         let command =
             get_command_by_name(&subsystem, name).ok_or(CoordinatorError::NoCommandWithName)?;
         let subscriptions = self.subscriptions.clone();
-        let (tx, mut rx): (
+        let (tx, rx): (
             Sender<UnpiPacket<Container>>,
             Receiver<UnpiPacket<Container>>,
         ) = oneshot::channel();
+        {
+            let mut s = subscriptions.lock().await;
+            let subscription = Subscription::SingleShot(
+                Predicate(Box::new(move |packet: &UnpiPacket<Container>| {
+                    packet.type_subsystem == (message_type, subsystem)
+                        && packet.command == command.id
+                })),
+                tx,
+            );
+            s.subscribe(subscription);
+        }
 
-        let mut s = subscriptions.lock().await;
-        let subscription = Subscription::SingleShot(
-            Predicate(Box::new(move |packet: &UnpiPacket<Container>| {
-                packet.type_subsystem == (message_type, subsystem) && packet.command == command.id
-            })),
-            tx,
-        );
-        s.subscribe(subscription);
-        drop(s);
         log!("waiting for packet");
-        //println!("{:?}", rx.try_recv());
         let packet = rx.await.map_err(|_| CoordinatorError::SubscriptionError)?;
-        // loop {
-        //     println!("{:?}", rx.try_recv());
-        //     std::thread::sleep(std::time::Duration::from_millis(1000));
-        // }
         log!("returning packet");
         Ok(packet)
     }

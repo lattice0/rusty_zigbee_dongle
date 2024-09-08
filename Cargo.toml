@@ -7,7 +7,7 @@ edition = "2021"
 serialport = {git = "https://github.com/serialport/serialport-rs", rev="18f5c2ab5e2b08d839fd6dd0d4c5624778da593b"}
 psila-data = {git = "https://github.com/blueluna/psila.git", rev = "9b87f44d3bad1ce04c8b4fae1e6e6819843db1cb", optional=true}
 ieee802154 = {version="0.6.1", optional=true}
-pasts      = {git = "https://github.com/ardaku/pasts", rev = "654db2358daddbf95543b5571a76d43daa1231bd"}
+#pasts      = {git = "https://github.com/ardaku/pasts", rev = "654db2358daddbf95543b5571a76d43daa1231bd"}
 futures    = "0.3.3"
 
 [features]
