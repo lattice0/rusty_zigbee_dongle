@@ -6,7 +6,6 @@ use crate::{
         commands::{get_command_by_name, ParameterValue},
         LenTypeInfo, MessageType, Subsystem, UnpiPacket,
     },
-    utils::log,
 };
 use futures::{
     channel::oneshot::{self, Receiver, Sender},
@@ -52,7 +51,6 @@ impl<S: SubscriptionSerial> CC253X<S> {
         subsystem: Subsystem,
         _timeout: Option<std::time::Duration>,
     ) -> Result<UnpiPacket<Container>, CoordinatorError> {
-        log!("waiting for {:?}", name);
         let command =
             get_command_by_name(&subsystem, name).ok_or(CoordinatorError::NoCommandWithName)?;
         let subscriptions = self.subscriptions.clone();
@@ -72,9 +70,7 @@ impl<S: SubscriptionSerial> CC253X<S> {
             s.subscribe(subscription);
         }
 
-        log!("waiting for packet");
         let packet = rx.await.map_err(|_| CoordinatorError::SubscriptionError)?;
-        log!("returning packet");
         Ok(packet)
     }
 }
@@ -117,9 +113,7 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
             serial.lock().await.write(&packet).await?;
             Ok::<(), CoordinatorError>(())
         };
-        println!("waiting for future!!!!");
         let (_s, packet) = futures::try_join!(send, wait)?;
-        println!("returned future!!!!");
         let r = command.read_and_fill(packet.payload.as_slice())?;
         Ok(r.get(&"majorrel").cloned())
     }
