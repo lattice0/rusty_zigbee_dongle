@@ -17,14 +17,14 @@ jobs:
 
     - name: Set up Rust
       run: |
-      sudo apt-get update
-      sudo apt-get install -y pkgconf curl libusb-1.0-0-dev libudev-dev
-      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-      export PATH="$HOME/.cargo/bin:$PATH"
-      rustup default stable
-      rustup update
-      rustc --version
-      cargo --version
+        sudo apt-get update
+        sudo apt-get install -y pkgconf curl libusb-1.0-0-dev libudev-dev
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        export PATH="$HOME/.cargo/bin:$PATH"
+        rustup default stable
+        rustup update
+        rustc --version
+        cargo --version
 
     - name: Build
       run: cargo build --verbose
