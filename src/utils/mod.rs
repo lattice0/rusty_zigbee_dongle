@@ -6,6 +6,7 @@ macro_rules! log {
         println!($($arg)*);
     }
 }
+use futures::executor::block_on;
 pub(crate) use log;
 
 #[allow(unused_macros)]
@@ -16,7 +17,6 @@ macro_rules! warnn {
 }
 #[allow(unused_imports)]
 pub(crate) use warnn;
-
 
 macro_rules! err {
     ($($arg:tt)*) => {

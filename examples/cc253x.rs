@@ -1,10 +1,10 @@
 //use pasts::Executor;
+use futures::executor::block_on;
 use rusty_zigbee_dongle::{
     cc253x::CC253X,
     coordinator::{Coordinator, CoordinatorError, LedStatus},
 };
 use std::path::PathBuf;
-use futures::executor::block_on;
 
 fn main() {
     let f = async {
@@ -12,6 +12,7 @@ fn main() {
 
         // Not all firmware versions support LED write as far as I understood
         let a = async {
+            
             cc2531.set_led(LedStatus::On).await.unwrap();
             Ok::<(), CoordinatorError>(())
         };
@@ -19,9 +20,8 @@ fn main() {
             println!("version: {:?}", cc2531.version().await);
             Ok::<(), CoordinatorError>(())
         };
-        futures::try_join!(a,b)
+        futures::try_join!(a, b)
     };
-    
-    let v = block_on(f);
-    println!("version: {:?}", v);
+
+    block_on(f).unwrap();
 }
