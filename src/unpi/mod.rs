@@ -1,6 +1,5 @@
-use commands::{Command, ParameterValue};
-
 use crate::{coordinator::CoordinatorError, utils::slice_reader::SliceReader};
+use commands::{Command, ParameterValue};
 use std::{future::Future, io::Write};
 
 pub mod commands;
@@ -362,6 +361,16 @@ impl<'a> UnpiPacket<&'a [u8]> {
         };
         let fcs = h.checksum()?;
         Ok(UnpiPacket { fcs, ..h })
+    }
+
+    pub fn to_owned(&self) -> UnpiPacket<Vec<u8>> {
+        UnpiPacket {
+            len: self.len.clone(),
+            type_subsystem: self.type_subsystem.clone(),
+            command: self.command,
+            payload: self.payload.to_vec(),
+            fcs: self.fcs,
+        }
     }
 }
 

@@ -1,3 +1,4 @@
+use crate::utils::{err, log};
 use std::collections::VecDeque;
 
 pub struct Predicate<T>(pub Box<dyn Fn(&T) -> bool + Send + Sync>);
@@ -31,7 +32,7 @@ pub struct SubscriptionService<T> {
     subscriptions: VecDeque<Subscription<T>>,
 }
 
-impl<T: Clone + PartialEq> SubscriptionService<T> {
+impl<T: Clone + PartialEq + std::fmt::Debug> SubscriptionService<T> {
     pub fn new() -> Self {
         Self {
             subscriptions: VecDeque::new(),
@@ -39,6 +40,7 @@ impl<T: Clone + PartialEq> SubscriptionService<T> {
     }
 
     pub fn subscribe(&mut self, subscription: Subscription<T>) {
+        log!("adding subscription {:?}", subscription);
         self.subscriptions.push_front(subscription);
     }
 
@@ -54,17 +56,22 @@ impl<T: Clone + PartialEq> SubscriptionService<T> {
             .map(|x| (x.0, x.1.is_single_shot()))
         {
             if is_single_shot {
+                println!("found single shot subscription");
                 let subscription = self
                     .subscriptions
                     .remove(position)
                     .ok_or(SubscriptionError::MissingSubscription)?;
-                subscription
+                println!("subscription: {:?}", subscription);
+                println!("subscriptions: {:?}", self.subscriptions);
+                let tx = subscription
                     .to_single_shot()
                     .ok_or(SubscriptionError::NotSingleShot)?
-                    .1
-                    .send(value.clone())
+                    .1;
+                tx.send(value.clone())
                     .map_err(|_| SubscriptionError::Send)?;
+                log!("sent packet");
             } else {
+                println!("found multiple shot subscription");
                 let subscription = self.subscriptions.get_mut(position).unwrap();
                 match subscription {
                     Subscription::SingleShot(_, _) => return Err(SubscriptionError::Unreachable),
@@ -74,6 +81,8 @@ impl<T: Clone + PartialEq> SubscriptionService<T> {
                     }
                 }
             }
+        } else {
+            err!("No subscription found for {:?}", value);
         }
         Ok(())
     }

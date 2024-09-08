@@ -11,11 +11,10 @@ use std::future::Future;
 
 pub mod simple_serial_port;
 
-pub trait SimpleSerial {
+pub trait SubscriptionSerial {
     type Sender;
     type Receiver;
 
-    fn read(&mut self) -> impl Future<Output = Result<UnpiPacket<Vec<u8>>, CoordinatorError>>;
     fn write(
         &mut self,
         packet: &UnpiPacket<Vec<u8>>,
@@ -80,4 +79,6 @@ pub enum SerialThreadError {
     SerialRead,
     SerialWrite,
     MalformedPacket,
+    SubscriptionWrite,
+    PacketParse
 }

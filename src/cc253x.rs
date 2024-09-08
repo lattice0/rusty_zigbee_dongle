@@ -1,6 +1,6 @@
 use crate::{
     coordinator::{AddressMode, Coordinator, CoordinatorError, LedStatus, ResetType},
-    serial::{simple_serial_port::SimpleSerialPort, SimpleSerial},
+    serial::{simple_serial_port::SimpleSerialPort, SubscriptionSerial},
     subscription::{Predicate, Subscription, SubscriptionService},
     unpi::{
         commands::{get_command_by_name, ParameterValue},
@@ -19,7 +19,7 @@ const MAXIMUM_ZIGBEE_PAYLOAD_SIZE: usize = 255;
 
 type Container = Vec<u8>;
 
-pub struct CC253X<S: SimpleSerial> {
+pub struct CC253X<S: SubscriptionSerial> {
     _supports_led: Option<bool>,
     subscriptions: Arc<Mutex<SubscriptionService<UnpiPacket<Container>>>>,
     serial: Arc<Mutex<S>>,
@@ -27,22 +27,24 @@ pub struct CC253X<S: SimpleSerial> {
 
 impl CC253X<SimpleSerialPort> {
     pub fn from_path(path: PathBuf, baud_rate: u32) -> Result<Self, CoordinatorError> {
+        let subscriptions = Arc::new(Mutex::new(SubscriptionService::new()));
+
         let mut serial = SimpleSerialPort::new(
             path.to_str()
                 .ok_or(CoordinatorError::Io("not a path".to_string()))?,
             baud_rate,
+            subscriptions.clone(),
         )?;
         serial.start()?;
-        let subscriptions = SubscriptionService::new();
         Ok(Self {
             serial: Arc::new(Mutex::new(serial)),
             _supports_led: None,
-            subscriptions: Arc::new(Mutex::new(subscriptions)),
+            subscriptions: subscriptions.clone(),
         })
     }
 }
 
-impl<S: SimpleSerial> CC253X<S> {
+impl<S: SubscriptionSerial> CC253X<S> {
     pub async fn wait_for(
         &self,
         name: &str,
@@ -54,26 +56,33 @@ impl<S: SimpleSerial> CC253X<S> {
         let command =
             get_command_by_name(&subsystem, name).ok_or(CoordinatorError::NoCommandWithName)?;
         let subscriptions = self.subscriptions.clone();
-        let (tx, rx): (
+        let (tx, mut rx): (
             Sender<UnpiPacket<Container>>,
             Receiver<UnpiPacket<Container>>,
         ) = oneshot::channel();
+
+        let mut s = subscriptions.lock().await;
+        let subscription = Subscription::SingleShot(
+            Predicate(Box::new(move |packet: &UnpiPacket<Container>| {
+                packet.type_subsystem == (message_type, subsystem) && packet.command == command.id
+            })),
+            tx,
+        );
+        s.subscribe(subscription);
+        drop(s);
+        log!("waiting for packet");
+        //println!("{:?}", rx.try_recv());
         let packet = rx.await.map_err(|_| CoordinatorError::SubscriptionError)?;
-        subscriptions
-            .lock()
-            .await
-            .subscribe(Subscription::SingleShot(
-                Predicate(Box::new(move |packet: &UnpiPacket<Container>| {
-                    packet.type_subsystem == (message_type, subsystem)
-                        && packet.command == command.id
-                })),
-                tx,
-            ));
+        // loop {
+        //     println!("{:?}", rx.try_recv());
+        //     std::thread::sleep(std::time::Duration::from_millis(1000));
+        // }
+        log!("returning packet");
         Ok(packet)
     }
 }
 
-impl<S: SimpleSerial> Coordinator for CC253X<S> {
+impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
     type ZclFrame = psila_data::cluster_library::ClusterLibraryHeader;
 
     type ZclPayload<'a> = ([u8; MAXIMUM_ZIGBEE_PAYLOAD_SIZE], usize);
@@ -100,6 +109,7 @@ impl<S: SimpleSerial> Coordinator for CC253X<S> {
         let command = get_command_by_name(&Subsystem::Sys, "version")
             .ok_or(CoordinatorError::NoCommandWithName)?;
         let serial = self.serial.clone();
+        let wait = self.wait_for("version", MessageType::SRESP, Subsystem::Sys, None);
         let send = async {
             let packet = UnpiPacket::from_command_owned(
                 LenTypeInfo::OneByte,
@@ -110,8 +120,9 @@ impl<S: SimpleSerial> Coordinator for CC253X<S> {
             serial.lock().await.write(&packet).await?;
             Ok::<(), CoordinatorError>(())
         };
-        let wait = self.wait_for("version", MessageType::SRESP, Subsystem::Sys, None);
-        let (_, packet) = futures::try_join!(send, wait)?;
+        println!("waiting for future!!!!");
+        let (_s, packet) = futures::try_join!(send, wait)?;
+        println!("returned future!!!!");
         let r = command.read_and_fill(packet.payload.as_slice())?;
         Ok(r.get(&"majorrel").cloned())
     }
