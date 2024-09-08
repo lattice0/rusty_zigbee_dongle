@@ -85,9 +85,7 @@ impl<S: SubscriptionSerial> CC253X<S> {
         futures::try_join!(send, wait)
             .map(|(_, packet)| command.read_and_fill(packet.payload.as_slice()))?
     }
-}
 
-impl<S: SubscriptionSerial> CC253X<S> {
     pub async fn wait_for(
         &self,
         name: &str,
