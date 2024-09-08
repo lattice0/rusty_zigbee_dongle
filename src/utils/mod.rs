@@ -6,7 +6,6 @@ macro_rules! log {
         println!($($arg)*);
     }
 }
-use futures::executor::block_on;
 pub(crate) use log;
 
 #[allow(unused_macros)]

@@ -25,6 +25,10 @@ pub struct UnpiPacket<T> {
     pub fcs: u8,
 }
 
+pub type Container = Vec<u8>;
+/// Static UNPI packet type
+pub type SUnpiPacket = UnpiPacket<Container>;
+
 impl<T: AsRef<[u8]>> std::fmt::Debug for UnpiPacket<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("UnpiPacket")

@@ -3,9 +3,10 @@ use crate::{
     serial::{simple_serial_port::SimpleSerialPort, SubscriptionSerial},
     subscription::{Predicate, Subscription, SubscriptionService},
     unpi::{
-        commands::{get_command_by_name, ParameterValue},
-        LenTypeInfo, MessageType, Subsystem, UnpiPacket,
+        commands::{get_command_by_name, ParameterValue, ParametersValueMap},
+        LenTypeInfo, MessageType, SUnpiPacket, Subsystem,
     },
+    utils::warnn,
 };
 use futures::{
     channel::oneshot::{self, Receiver, Sender},
@@ -16,11 +17,9 @@ use std::{path::PathBuf, sync::Arc};
 //TODO: fix this
 const MAXIMUM_ZIGBEE_PAYLOAD_SIZE: usize = 255;
 
-type Container = Vec<u8>;
-
 pub struct CC253X<S: SubscriptionSerial> {
     _supports_led: Option<bool>,
-    subscriptions: Arc<Mutex<SubscriptionService<UnpiPacket<Container>>>>,
+    subscriptions: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
     serial: Arc<Mutex<S>>,
 }
 
@@ -44,24 +43,64 @@ impl CC253X<SimpleSerialPort> {
 }
 
 impl<S: SubscriptionSerial> CC253X<S> {
+    pub async fn request(
+        &self,
+        name: &str,
+        subsystem: Subsystem,
+        parameters: &[(&'static str, ParameterValue)],
+    ) -> Result<(), CoordinatorError> {
+        let command =
+            get_command_by_name(&subsystem, name).ok_or(CoordinatorError::NoCommandWithName)?;
+        let packet = SUnpiPacket::from_command_owned(
+            LenTypeInfo::OneByte,
+            (command.command_type, subsystem),
+            parameters,
+            command,
+        )?;
+        self.serial.lock().await.write(&packet).await?;
+        Ok(())
+    }
+
+    pub async fn request_with_reply(
+        &self,
+        name: &str,
+        subsystem: Subsystem,
+        parameters: &[(&'static str, ParameterValue)],
+    ) -> Result<ParametersValueMap, CoordinatorError> {
+        let command =
+            get_command_by_name(&subsystem, name).ok_or(CoordinatorError::NoCommandWithName)?;
+        let packet = SUnpiPacket::from_command_owned(
+            LenTypeInfo::OneByte,
+            (command.command_type, subsystem),
+            parameters,
+            command,
+        )?;
+        let wait = self.wait_for("version", MessageType::SRESP, Subsystem::Sys, None);
+        let send = async {
+            let mut lock = self.serial.lock().await;
+            lock.write(&packet).await
+        };
+        futures::try_join!(send, wait)
+            .map(|(_, packet)| command.read_and_fill(packet.payload.as_slice()))?
+    }
+}
+
+impl<S: SubscriptionSerial> CC253X<S> {
     pub async fn wait_for(
         &self,
         name: &str,
         message_type: MessageType,
         subsystem: Subsystem,
         _timeout: Option<std::time::Duration>,
-    ) -> Result<UnpiPacket<Container>, CoordinatorError> {
+    ) -> Result<SUnpiPacket, CoordinatorError> {
         let command =
             get_command_by_name(&subsystem, name).ok_or(CoordinatorError::NoCommandWithName)?;
         let subscriptions = self.subscriptions.clone();
-        let (tx, rx): (
-            Sender<UnpiPacket<Container>>,
-            Receiver<UnpiPacket<Container>>,
-        ) = oneshot::channel();
+        let (tx, rx): (Sender<SUnpiPacket>, Receiver<SUnpiPacket>) = oneshot::channel();
         {
             let mut s = subscriptions.lock().await;
             let subscription = Subscription::SingleShot(
-                Predicate(Box::new(move |packet: &UnpiPacket<Container>| {
+                Predicate(Box::new(move |packet: &SUnpiPacket| {
                     packet.type_subsystem == (message_type, subsystem)
                         && packet.command == command.id
                 })),
@@ -70,8 +109,7 @@ impl<S: SubscriptionSerial> CC253X<S> {
             s.subscribe(subscription);
         }
 
-        let packet = rx.await.map_err(|_| CoordinatorError::SubscriptionError)?;
-        Ok(packet)
+        rx.await.map_err(|_| CoordinatorError::SubscriptionError)
     }
 }
 
@@ -90,56 +128,29 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
         todo!()
     }
 
-    async fn permit_join(
-        &self,
-        _address: u16,
-        _duration: std::time::Duration,
-    ) -> Result<(), CoordinatorError> {
-        todo!()
+    async fn is_inter_pan_mode(&self) -> bool {
+        warnn!("is_inter_pan_mode not implemented, assuming false");
+        false
     }
 
     async fn version(&self) -> Result<Option<ParameterValue>, CoordinatorError> {
-        let command = get_command_by_name(&Subsystem::Sys, "version")
-            .ok_or(CoordinatorError::NoCommandWithName)?;
-        let serial = self.serial.clone();
-        let wait = self.wait_for("version", MessageType::SRESP, Subsystem::Sys, None);
-        let send = async {
-            let packet = UnpiPacket::from_command_owned(
-                LenTypeInfo::OneByte,
-                (MessageType::SREQ, Subsystem::Sys),
-                &[],
-                command,
-            )?;
-            serial.lock().await.write(&packet).await?;
-            Ok::<(), CoordinatorError>(())
-        };
-        let (_s, packet) = futures::try_join!(send, wait)?;
-        let r = command.read_and_fill(packet.payload.as_slice())?;
-        Ok(r.get(&"majorrel").cloned())
+        let version = self
+            .request_with_reply("version", Subsystem::Sys, &[])
+            .await?;
+        Ok(version.get(&"majorrel").cloned())
     }
 
     async fn reset(&self, reset_type: ResetType) -> Result<(), CoordinatorError> {
-        let command = get_command_by_name(&Subsystem::Sys, "reset_req")
-            .ok_or(CoordinatorError::NoCommandWithName)?;
         let parameters = match reset_type {
             ResetType::Soft => &[("type", ParameterValue::U8(1))],
             ResetType::Hard => &[("type", ParameterValue::U8(0))],
         };
-
-        let serial = self.serial.clone();
-        let packet = UnpiPacket::from_command_owned(
-            LenTypeInfo::OneByte,
-            (MessageType::SREQ, Subsystem::Sys),
-            parameters,
-            command,
-        )?;
-        serial.lock().await.write(&packet).await?;
+        self.request("reset_req", Subsystem::Sys, parameters)
+            .await?;
         Ok::<(), CoordinatorError>(())
     }
 
     async fn set_led(&self, led_status: LedStatus) -> Result<(), CoordinatorError> {
-        let command = get_command_by_name(&Subsystem::Util, "led_control")
-            .ok_or(CoordinatorError::NoCommandWithName)?;
         //TODO: const firmwareControlsLed = parseInt(this.version.revision) >= 20211029;
         let firmware_controls_led = true;
 
@@ -167,22 +178,15 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
             ],
         };
 
-        let serial = self.serial.clone();
-        let packet = UnpiPacket::from_command_owned(
-            LenTypeInfo::OneByte,
-            (MessageType::SREQ, Subsystem::Util),
-            parameters,
-            command,
-        )?;
-        serial.lock().await.write(&packet).await?;
-        Ok(())
+        self.request("led_control", Subsystem::Util, parameters)
+            .await
     }
 
     async fn change_channel(&self, channel: u8) -> Result<(), CoordinatorError> {
         let parameters = &[
-            ("dst_addr", ParameterValue::U16(0xffff)),
+            ("destination_address", ParameterValue::U16(0xffff)),
             (
-                "dst_addr_mode",
+                "destination_address_mode",
                 ParameterValue::U16(AddressMode::AddrBroadcast as u16),
             ),
             (
@@ -196,22 +200,15 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
             ),
             ("scan_duration", ParameterValue::U8(0xfe)),
             ("scan_count", ParameterValue::U8(0)),
-            ("nwk_manager_addr", ParameterValue::U16(0)),
+            ("network_manager_address", ParameterValue::U16(0)),
         ];
 
-        let command = get_command_by_name(&Subsystem::Zdo, "management_network_update_request")
-            .ok_or(CoordinatorError::NoCommandWithName)?;
-
-        let serial = self.serial.clone();
-        let packet = UnpiPacket::from_command_owned(
-            LenTypeInfo::OneByte,
-            (MessageType::SREQ, Subsystem::Zdo),
+        self.request(
+            "management_network_update_request",
+            Subsystem::Zdo,
             parameters,
-            command,
-        )?;
-        serial.lock().await.write(&packet).await?;
-
-        Ok(())
+        )
+        .await
     }
 
     async fn set_transmit_power(&self, power: i8) -> Result<(), CoordinatorError> {
@@ -220,18 +217,7 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
             ("value", ParameterValue::I8(power)),
         ];
 
-        let command = get_command_by_name(&Subsystem::Zdo, "stack_tune")
-            .ok_or(CoordinatorError::NoCommandWithName)?;
-
-        let serial = self.serial.clone();
-        let packet = UnpiPacket::from_command_owned(
-            LenTypeInfo::OneByte,
-            (MessageType::SREQ, Subsystem::Zdo),
-            parameters,
-            command,
-        )?;
-        serial.lock().await.write(&packet).await?;
-        Ok(())
+        self.request("stack_tune", Subsystem::Zdo, parameters).await
     }
 
     async fn request_network_address(_addr: &str) -> Result<(), CoordinatorError> {
@@ -250,5 +236,37 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
         _source_endpoint: Option<u32>,
     ) -> Result<Option<Self::ZclPayload<'static>>, CoordinatorError> {
         Ok(None)
+    }
+
+    async fn permit_join(
+        &self,
+        seconds: std::time::Duration,
+        network_address: Option<u16>,
+    ) -> Result<(), CoordinatorError> {
+        if self.is_inter_pan_mode().await {
+            return Err(CoordinatorError::InterpanMode);
+        }
+        let address_mode =
+            network_address.map_or(AddressMode::AddrBroadcast, |_| AddressMode::Addr16bit);
+        let destination_address = network_address.unwrap_or(0xfffc);
+        let parameters = &[
+            ("address_mode", ParameterValue::U16(address_mode as u16)),
+            (
+                "destination_address",
+                ParameterValue::U16(destination_address),
+            ),
+            (
+                "duration",
+                ParameterValue::U8(
+                    seconds
+                        .as_secs()
+                        .try_into()
+                        .map_err(|_| CoordinatorError::DurationTooLong)?,
+                ),
+            ),
+            ("tc_significance", ParameterValue::U8(0)),
+        ];
+        self.request("management_permit_join_request", Subsystem::Zdo, parameters)
+            .await
     }
 }

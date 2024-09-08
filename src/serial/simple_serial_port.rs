@@ -2,7 +2,7 @@ use super::{SerialThreadError, SubscriptionSerial};
 use crate::{
     coordinator::CoordinatorError,
     subscription::SubscriptionService,
-    unpi::{LenTypeInfo, UnpiPacket},
+    unpi::{LenTypeInfo, SUnpiPacket, UnpiPacket},
     utils::log,
 };
 use futures::StreamExt;
@@ -13,8 +13,6 @@ use futures::{
 };
 use std::{sync::Arc, thread::JoinHandle};
 
-type Container = Vec<u8>;
-
 const DEFAULT_READ_TIMEOUT_MS: u64 = 10;
 
 // Simplest possible serial port implementation
@@ -22,20 +20,17 @@ pub struct SimpleSerialPort {
     path: String,
     baud_rate: u32,
     // from the coordinator to the serial port
-    to_serial: (
-        Option<Sender<UnpiPacket<Container>>>,
-        Option<Receiver<UnpiPacket<Container>>>,
-    ),
+    to_serial: (Option<Sender<SUnpiPacket>>, Option<Receiver<SUnpiPacket>>),
     read_thread: Option<JoinHandle<Result<(), SerialThreadError>>>,
     write_thread: Option<JoinHandle<Result<(), SerialThreadError>>>,
-    subscription_service: Arc<Mutex<SubscriptionService<UnpiPacket<Container>>>>,
+    subscription_service: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
 }
 
 impl SimpleSerialPort {
     pub fn new(
         path: &str,
         baud_rate: u32,
-        subscription_service: Arc<Mutex<SubscriptionService<UnpiPacket<Container>>>>,
+        subscription_service: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
     ) -> Result<Self, CoordinatorError> {
         let to_serial = mpsc::channel(10);
         let to_serial = (Some(to_serial.0), Some(to_serial.1));
@@ -51,8 +46,8 @@ impl SimpleSerialPort {
 }
 
 impl SubscriptionSerial for SimpleSerialPort {
-    type Sender = Sender<UnpiPacket<Container>>;
-    type Receiver = Receiver<UnpiPacket<Container>>;
+    type Sender = Sender<SUnpiPacket>;
+    type Receiver = Receiver<SUnpiPacket>;
 
     fn start(&mut self) -> Result<(), CoordinatorError> {
         let mut read = serialport::new(self.path.clone(), self.baud_rate)

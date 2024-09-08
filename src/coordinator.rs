@@ -1,4 +1,7 @@
-use crate::{unpi::commands::{ParameterError, ParameterValue}, utils::map::MapError};
+use crate::{
+    unpi::commands::{ParameterError, ParameterValue},
+    utils::map::MapError,
+};
 use std::future::Future;
 
 pub trait Coordinator {
@@ -11,9 +14,10 @@ pub trait Coordinator {
     fn version(&self) -> impl Future<Output = Result<Option<ParameterValue>, CoordinatorError>>;
     fn permit_join(
         &self,
-        address: u16,
         duration: std::time::Duration,
+        address: Option<u16>,
     ) -> impl Future<Output = Result<(), CoordinatorError>>;
+    fn is_inter_pan_mode(&self) -> impl Future<Output = bool>;
     fn reset(&self, reset_type: ResetType) -> impl Future<Output = Result<(), CoordinatorError>>;
     fn set_led(&self, led_status: LedStatus) -> impl Future<Output = Result<(), CoordinatorError>>;
     fn change_channel(&self, channel: u8) -> impl Future<Output = Result<(), CoordinatorError>>;
@@ -68,7 +72,9 @@ pub enum CoordinatorError {
     NoRequest,
     NoResponse,
     SerialChannelMissing,
-    SubscriptionError
+    SubscriptionError,
+    InterpanMode,
+    DurationTooLong,
 }
 
 impl From<std::io::Error> for CoordinatorError {
