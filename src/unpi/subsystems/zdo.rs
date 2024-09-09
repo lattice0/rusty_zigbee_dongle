@@ -1,8 +1,5 @@
 use crate::{
-    unpi::{
-        commands::{Command, ParameterType},
-        MessageType,
-    },
+    unpi::{commands::Command, parameters::ParameterType, MessageType},
     utils::map::StaticMap,
 };
 

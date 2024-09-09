@@ -1,8 +1,8 @@
 use crate::{
     coordinator::CoordinatorError,
     unpi::{
-        commands::{Command, ParameterValue},
-        LenTypeInfo, MessageType, Subsystem, UnpiPacket, MAX_PAYLOAD_SIZE,
+        commands::Command, parameters::ParameterValue, LenTypeInfo, MessageType, Subsystem,
+        UnpiPacket, MAX_PAYLOAD_SIZE,
     },
     utils::info,
 };

@@ -5,8 +5,7 @@ use crate::{
     serial::{simple_serial_port::SimpleSerialPort, SubscriptionSerial},
     subscription::{Predicate, Subscription, SubscriptionService},
     unpi::{
-        commands::{get_command_by_name, ParameterValue, ParametersValueMap},
-        LenTypeInfo, MessageType, SUnpiPacket, Subsystem,
+        commands::{get_command_by_name, ParametersValueMap}, parameters::ParameterValue, LenTypeInfo, MessageType, SUnpiPacket, Subsystem
     },
     utils::{error, info, trace, warn},
 };
@@ -321,5 +320,12 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
     ) -> Result<(), CoordinatorError> {
         self.on_zigbee_event = Some(on_zigbee_event);
         Ok(())
+    }
+
+    async fn device_info(&self) -> Result<(), CoordinatorError> {
+        let response = self
+            .request_with_reply("get_device_info", Subsystem::Util, &[])
+            .await?;
+        todo!()
     }
 }

@@ -1,9 +1,11 @@
 use crate::{coordinator::CoordinatorError, utils::slice_reader::SliceReader};
-use commands::{Command, ParameterValue};
+use commands::Command;
+use parameters::ParameterValue;
 use std::{future::Future, io::Write};
 
 pub mod commands;
 pub mod constants;
+pub mod parameters;
 pub mod subsystems;
 
 pub const START_OF_FRAME: u8 = 0xFE;
@@ -463,8 +465,8 @@ impl TryFrom<u8> for Subsystem {
 mod tests {
     use super::*;
 
-    // some test cases from 
-    // https://github.com/shimmeringbee/unpi/blob/main/frame_test.go 
+    // some test cases from
+    // https://github.com/shimmeringbee/unpi/blob/main/frame_test.go
     // https://github.com/Koenkk/zigbee-herdsman/blob/master/test/adapter/z-stack/unpi.test.ts
 
     #[test]

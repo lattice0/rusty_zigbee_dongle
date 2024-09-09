@@ -1,7 +1,4 @@
-use crate::{
-    unpi::commands::{ParameterError, ParameterValue},
-    utils::map::MapError,
-};
+use crate::{unpi::{commands::ParameterError, parameters::ParameterValue}, utils::map::MapError};
 use std::future::Future;
 
 pub type OnEvent = Box<dyn Fn(ZigbeeEvent) -> Result<(), CoordinatorError>>;
@@ -55,6 +52,7 @@ pub trait Coordinator {
             }
         }
     }
+    fn device_info(&self) -> impl Future<Output = Result<(), CoordinatorError>>;
 }
 
 #[derive(Debug, Copy, Clone)]
