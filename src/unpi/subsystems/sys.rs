@@ -19,7 +19,7 @@ pub const COMMANDS_SYS: &[Command] = &[
         id: 1,
         command_type: MessageType::SREQ,
         request: None,
-        response: Some(StaticMap::new(&[("value", ParameterType::U8)])),
+        response: Some(StaticMap::new(&[("capabilities", ParameterType::U16)])),
     },
     Command {
         name: "version",

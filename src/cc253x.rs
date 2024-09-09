@@ -123,7 +123,20 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
     type IeeAddress = ieee802154::mac::Address;
 
     async fn start(&self) -> Result<(), CoordinatorError> {
-        Ok(())
+        for attempt in 0..3 {
+            trace!("pinging coordinator attempt number {:?}", attempt);
+            let ping = self.request_with_reply("ping", Subsystem::Sys, &[]).await?;
+            if ping.get(&"capabilities").is_some() {
+                let version = self.version().await?;
+                if let Some(version) = version {
+                    info!("coordinator version: {:?}", version);
+                    return Ok(());
+                } else {
+                    Err(CoordinatorError::CoordinatorOpen)?;
+                }
+            }
+        }
+        Err(CoordinatorError::CoordinatorOpen)
     }
 
     async fn stop(&self) -> Result<(), CoordinatorError> {

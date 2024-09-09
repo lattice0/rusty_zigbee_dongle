@@ -1,4 +1,5 @@
-use crate::utils::{error, info};
+#[allow(unused_imports)]
+use crate::utils::{error, trace, warn};
 use std::collections::VecDeque;
 
 pub struct Predicate<T>(pub Box<dyn Fn(&T) -> bool + Send + Sync>);
@@ -46,7 +47,7 @@ impl<T: Clone + PartialEq + std::fmt::Debug> SubscriptionService<T> {
     }
 
     pub fn subscribe(&mut self, subscription: Subscription<T>) {
-        info!("adding subscription {:?}", subscription);
+        trace!("adding subscription {:?}", subscription);
         self.subscriptions.push_front(subscription);
     }
 
@@ -83,7 +84,7 @@ impl<T: Clone + PartialEq + std::fmt::Debug> SubscriptionService<T> {
                 }
             }
         } else {
-            error!("No subscription found for {:?}", value);
+            warn!("No subscription found for {:?}", value);
         }
         Ok(())
     }

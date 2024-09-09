@@ -109,6 +109,7 @@ pub enum CoordinatorError {
     SubscriptionError,
     InterpanMode,
     DurationTooLong,
+    CoordinatorOpen
 }
 
 impl From<std::io::Error> for CoordinatorError {

@@ -1,5 +1,6 @@
 pub mod map;
 pub mod slice_reader;
+pub mod sleep;
 
 #[cfg(not(feature="log"))]
 mod log {
