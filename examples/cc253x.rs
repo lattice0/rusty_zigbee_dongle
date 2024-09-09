@@ -7,6 +7,9 @@ use rusty_zigbee_dongle::{
 use std::path::PathBuf;
 
 fn main() {
+    #[cfg(feature = "log")]
+    env_logger::init();
+
     let f = async {
         let cc2531 = CC253X::from_path(PathBuf::from("/dev/ttyACM0"), 115_200).unwrap();
 
@@ -16,7 +19,8 @@ fn main() {
             Ok::<(), CoordinatorError>(())
         };
         let b = async {
-            println!("version: {:?}", cc2531.version().await);
+            let version = cc2531.version().await.unwrap();
+            println!("version: {:?}", version);
             Ok::<(), CoordinatorError>(())
         };
         futures::try_join!(a, b)

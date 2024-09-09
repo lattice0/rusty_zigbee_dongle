@@ -4,7 +4,7 @@ use crate::{
         commands::{Command, ParameterValue},
         LenTypeInfo, MessageType, Subsystem, UnpiPacket, MAX_PAYLOAD_SIZE,
     },
-    utils::log,
+    utils::info,
 };
 use serialport::SerialPort;
 use std::future::Future;
@@ -55,7 +55,7 @@ where
         let h =
             UnpiPacket::from_payload((payload, LenTypeInfo::OneByte), type_subsystem, command_id)?;
         h.to_serial(&mut *serial)?;
-        log!(">>> {:?}", h);
+        info!(">>> {:?}", h);
         Ok(())
     }
 

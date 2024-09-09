@@ -3,7 +3,7 @@ use crate::{
     coordinator::CoordinatorError,
     subscription::SubscriptionService,
     unpi::{LenTypeInfo, SUnpiPacket, UnpiPacket},
-    utils::log,
+    utils::trace,
 };
 use futures::StreamExt;
 use futures::{channel::mpsc, executor::block_on, SinkExt};
@@ -72,7 +72,7 @@ impl SubscriptionSerial for SimpleSerialPort {
                     ))
                     .map_err(|_e| SerialThreadError::PacketParse)?
                     .to_owned();
-                    log!("<<< {:?}", packet);
+                    trace!("<<< {:?}", packet);
                     let send = async { subscription_service.lock().await.notify(packet) };
                     block_on(send).map_err(|_| SerialThreadError::SubscriptionWrite)?;
                 }
@@ -86,7 +86,7 @@ impl SubscriptionSerial for SimpleSerialPort {
         let receive_from_channel_send_to_serial = move || -> Result<(), SerialThreadError> {
             block_on(async {
                 while let Some(packet) = rx.next().await {
-                    log!(">>> {:?}", packet);
+                    trace!(">>> {:?}", packet);
                     packet
                         .to_serial(&mut *write)
                         .map_err(|_e| SerialThreadError::SerialWrite)?;

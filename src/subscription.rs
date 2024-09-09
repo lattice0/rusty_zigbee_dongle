@@ -1,4 +1,4 @@
-use crate::utils::{err, log};
+use crate::utils::{error, info};
 use std::collections::VecDeque;
 
 pub struct Predicate<T>(pub Box<dyn Fn(&T) -> bool + Send + Sync>);
@@ -46,7 +46,7 @@ impl<T: Clone + PartialEq + std::fmt::Debug> SubscriptionService<T> {
     }
 
     pub fn subscribe(&mut self, subscription: Subscription<T>) {
-        log!("adding subscription {:?}", subscription);
+        info!("adding subscription {:?}", subscription);
         self.subscriptions.push_front(subscription);
     }
 
@@ -83,7 +83,7 @@ impl<T: Clone + PartialEq + std::fmt::Debug> SubscriptionService<T> {
                 }
             }
         } else {
-            err!("No subscription found for {:?}", value);
+            error!("No subscription found for {:?}", value);
         }
         Ok(())
     }

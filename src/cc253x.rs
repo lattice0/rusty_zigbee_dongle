@@ -1,12 +1,14 @@
 use crate::{
-    coordinator::{AddressMode, Coordinator, CoordinatorError, LedStatus, ResetType},
+    coordinator::{
+        AddressMode, Coordinator, CoordinatorError, LedStatus, OnEvent, ResetType, ZigbeeEvent,
+    },
     serial::{simple_serial_port::SimpleSerialPort, SubscriptionSerial},
     subscription::{Predicate, Subscription, SubscriptionService},
     unpi::{
         commands::{get_command_by_name, ParameterValue, ParametersValueMap},
         LenTypeInfo, MessageType, SUnpiPacket, Subsystem,
     },
-    utils::warnn,
+    utils::{info, trace, warn},
 };
 use futures::{
     channel::oneshot::{self, Receiver, Sender},
@@ -21,7 +23,7 @@ pub struct CC253X<S: SubscriptionSerial> {
     _supports_led: Option<bool>,
     subscriptions: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
     serial: Arc<Mutex<S>>,
-    on_zcl_frame_callback: Option<Box<dyn Fn() -> Result<(), CoordinatorError>>>,
+    on_zigbee_event: Option<OnEvent>,
 }
 
 impl CC253X<SimpleSerialPort> {
@@ -39,7 +41,7 @@ impl CC253X<SimpleSerialPort> {
             serial: Arc::new(Mutex::new(serial)),
             _supports_led: None,
             subscriptions: subscriptions.clone(),
-            on_zcl_frame_callback: None,
+            on_zigbee_event: None,
         })
     }
 }
@@ -121,15 +123,15 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
     type IeeAddress = ieee802154::mac::Address;
 
     async fn start(&self) -> Result<(), CoordinatorError> {
-        todo!()
+        Ok(())
     }
 
     async fn stop(&self) -> Result<(), CoordinatorError> {
-        todo!()
+        Ok(())
     }
 
     async fn is_inter_pan_mode(&self) -> bool {
-        warnn!("is_inter_pan_mode not implemented, assuming false");
+        warn!("is_inter_pan_mode not implemented, assuming false");
         false
     }
 
@@ -141,6 +143,7 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
     }
 
     async fn reset(&self, reset_type: ResetType) -> Result<(), CoordinatorError> {
+        trace!("reset with reset type {:?}", reset_type);
         let parameters = match reset_type {
             ResetType::Soft => &[("type", ParameterValue::U8(1))],
             ResetType::Hard => &[("type", ParameterValue::U8(0))],
@@ -151,6 +154,7 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
     }
 
     async fn set_led(&self, led_status: LedStatus) -> Result<(), CoordinatorError> {
+        trace!("setting LED to {:?}", led_status);
         //TODO: const firmwareControlsLed = parseInt(this.version.revision) >= 20211029;
         let firmware_controls_led = true;
 
@@ -183,6 +187,7 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
     }
 
     async fn change_channel(&self, channel: u8) -> Result<(), CoordinatorError> {
+        info!("changing channel to {}", channel);
         let parameters = &[
             ("destination_address", ParameterValue::U16(0xffff)),
             (
@@ -212,6 +217,7 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
     }
 
     async fn set_transmit_power(&self, power: i8) -> Result<(), CoordinatorError> {
+        info!("setting transmit power to {}", power);
         let parameters = &[
             ("operation", ParameterValue::U8(0)),
             ("value", ParameterValue::I8(power)),
@@ -243,6 +249,7 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
         seconds: std::time::Duration,
         network_address: Option<u16>,
     ) -> Result<(), CoordinatorError> {
+        info!("permitting join for {} seconds", seconds.as_secs());
         if self.is_inter_pan_mode().await {
             return Err(CoordinatorError::InterpanMode);
         }
@@ -272,9 +279,14 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
 
     async fn discover_route(
         &self,
-        _address: Option<u16>,
-        _wait: Option<bool>,
+        address: Option<u16>,
+        wait: Option<bool>,
     ) -> Result<(), CoordinatorError> {
+        trace!(
+            "discovering route at address: {:?}, wait: {:?}",
+            address,
+            wait
+        );
         let parameters = &[
             ("destination_address", ParameterValue::U16(0)),
             ("options", ParameterValue::U8(0)),
@@ -288,11 +300,11 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
             .await
     }
 
-    async fn set_on_zcl_frame_callback(
+    async fn set_on_event(
         &mut self,
-        on_zcl_frame: Box<dyn Fn() -> Result<(), CoordinatorError>>,
+        on_zigbee_event: Box<dyn Fn(ZigbeeEvent) -> Result<(), CoordinatorError>>,
     ) -> Result<(), CoordinatorError> {
-        self.on_zcl_frame_callback = Some(on_zcl_frame);
+        self.on_zigbee_event = Some(on_zigbee_event);
         Ok(())
     }
 }

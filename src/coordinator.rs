@@ -4,6 +4,8 @@ use crate::{
 };
 use std::future::Future;
 
+pub type OnEvent = Box<dyn Fn(ZigbeeEvent) -> Result<(), CoordinatorError>>;
+
 pub trait Coordinator {
     type ZclFrame;
     type ZclPayload<'a>;
@@ -40,10 +42,33 @@ pub trait Coordinator {
         disable_recovery: bool,
         source_endpoint: Option<u32>,
     ) -> impl Future<Output = Result<Option<Self::ZclPayload<'static>>, CoordinatorError>>;
-    fn set_on_zcl_frame_callback(
+    fn set_on_event(
         &mut self,
-        on_zcl_frame: Box<dyn Fn() -> Result<(), CoordinatorError>>,
+        on_zigbee_event: Box<dyn Fn(ZigbeeEvent) -> Result<(), CoordinatorError>>,
     ) -> impl Future<Output = Result<(), CoordinatorError>>;
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum ZigbeeEvent {
+    DeviceJoined {
+        network_address: u16,
+        ieee_address: [u8; 8],
+    },
+    DeviceAnnounce {
+        network_address: u16,
+        ieee_address: [u8; 8],
+    },
+    NetworkAddress {
+        network_address: u16,
+        ieee_address: [u8; 8],
+    },
+    DeviceLeave(Either<(Option<u16>, [u8; 8]), (u16, Option<[u8; 8]>)>),
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum Either<A, B> {
+    Left(A),
+    Right(B),
 }
 
 pub enum AddressMode {
