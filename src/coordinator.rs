@@ -46,6 +46,15 @@ pub trait Coordinator {
         &mut self,
         on_zigbee_event: Box<dyn Fn(ZigbeeEvent) -> Result<(), CoordinatorError>>,
     ) -> impl Future<Output = Result<(), CoordinatorError>>;
+    fn error_if_interpan_mode(&self) -> impl Future<Output = Result<(), CoordinatorError>> {
+        async {
+            if self.is_inter_pan_mode().await {
+                Err(CoordinatorError::InterpanMode)
+            } else {
+                Ok(())
+            }
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -109,7 +118,7 @@ pub enum CoordinatorError {
     SubscriptionError,
     InterpanMode,
     DurationTooLong,
-    CoordinatorOpen
+    CoordinatorOpen,
 }
 
 impl From<std::io::Error> for CoordinatorError {

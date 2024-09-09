@@ -8,7 +8,7 @@ use crate::{
         commands::{get_command_by_name, ParameterValue, ParametersValueMap},
         LenTypeInfo, MessageType, SUnpiPacket, Subsystem,
     },
-    utils::{info, trace, warn},
+    utils::{error, info, trace, warn},
 };
 use futures::{
     channel::oneshot::{self, Receiver, Sender},
@@ -79,7 +79,7 @@ impl<S: SubscriptionSerial> CC253X<S> {
             parameters,
             command,
         )?;
-        let wait = self.wait_for("version", MessageType::SRESP, Subsystem::Sys, None);
+        let wait = self.wait_for(name, MessageType::SRESP, Subsystem::Sys, None);
         let send = async {
             let mut lock = self.serial.lock().await;
             lock.write(&packet).await
@@ -127,13 +127,17 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
             trace!("pinging coordinator attempt number {:?}", attempt);
             let ping = self.request_with_reply("ping", Subsystem::Sys, &[]).await?;
             if ping.get(&"capabilities").is_some() {
+                trace!("ping successful");
                 let version = self.version().await?;
                 if let Some(version) = version {
                     info!("coordinator version: {:?}", version);
                     return Ok(());
                 } else {
+                    error!("no version found");
                     Err(CoordinatorError::CoordinatorOpen)?;
                 }
+            } else {
+                error!("ping failed");
             }
         }
         Err(CoordinatorError::CoordinatorOpen)
@@ -263,9 +267,7 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
         network_address: Option<u16>,
     ) -> Result<(), CoordinatorError> {
         info!("permitting join for {} seconds", seconds.as_secs());
-        if self.is_inter_pan_mode().await {
-            return Err(CoordinatorError::InterpanMode);
-        }
+        self.error_if_interpan_mode().await?;
         let address_mode =
             network_address.map_or(AddressMode::AddrBroadcast, |_| AddressMode::Addr16bit);
         let destination_address = network_address.unwrap_or(0xfffc);
