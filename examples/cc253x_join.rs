@@ -1,4 +1,3 @@
-//use pasts::Executor;
 use futures::executor::block_on;
 use log::info;
 use rusty_zigbee_dongle::{
@@ -24,22 +23,22 @@ fn main() {
                         network_address,
                         ieee_address,
                     } => {
-                        println!("Device joined: {:?} {:?}", network_address, ieee_address);
+                        info!("Device joined: {:?} {:?}", network_address, ieee_address);
                     }
                     ZigbeeEvent::DeviceAnnounce {
                         network_address,
                         ieee_address,
                     } => {
-                        println!("Device announce: {:?} {:?}", network_address, ieee_address);
+                        info!("Device announce: {:?} {:?}", network_address, ieee_address);
                     }
                     ZigbeeEvent::NetworkAddress {
                         network_address,
                         ieee_address,
                     } => {
-                        println!("Network address: {:?} {:?}", network_address, ieee_address);
+                        info!("Network address: {:?} {:?}", network_address, ieee_address);
                     }
                     ZigbeeEvent::DeviceLeave(d) => {
-                        println!("Device leave: {:?}", d);
+                        info!("Device leave: {:?}", d);
                     }
                 }
                 #[allow(unreachable_code)]

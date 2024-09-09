@@ -463,7 +463,9 @@ impl TryFrom<u8> for Subsystem {
 mod tests {
     use super::*;
 
-    //some test cases from https://github.com/shimmeringbee/unpi/blob/main/frame_test.go
+    // some test cases from 
+    // https://github.com/shimmeringbee/unpi/blob/main/frame_test.go 
+    // https://github.com/Koenkk/zigbee-herdsman/blob/master/test/adapter/z-stack/unpi.test.ts
 
     #[test]
     pub fn test_unpi_empty() {
@@ -539,5 +541,23 @@ mod tests {
         let mut output: &mut [u8] = &mut [0u8; MAX_FRAME_SIZE];
         let len = packet.to_bytes(&mut output).unwrap();
         assert_eq!(&output[0..len], &data[..])
+    }
+
+    #[test]
+    pub fn test_parse_message() {
+        let data = [
+            0xfe, 0x0e, 0x61, 0x02, 0x02, 0x00, 0x02, 0x06, 0x03, 0xd9, 0x14, 0x34, 0x01, 0x02,
+            0x00, 0x00, 0x00, 0x00, 0x92,
+        ];
+        let packet = UnpiPacket::try_from((&data[..], LenTypeInfo::OneByte)).unwrap();
+        assert_eq!(packet.len, LenType::OneByte(14));
+        assert_eq!(packet.type_subsystem, (MessageType::SRESP, Subsystem::Sys));
+        assert_eq!(packet.command, 2);
+        assert_eq!(
+            packet.payload,
+            &[2, 0, 2, 6, 3, 217, 20, 52, 1, 2, 0, 0, 0, 0]
+        );
+        assert_eq!(packet.checksum().unwrap(), packet.fcs);
+        assert_eq!(packet.checksum().unwrap(), 0x92);
     }
 }
