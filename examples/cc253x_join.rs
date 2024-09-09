@@ -3,8 +3,8 @@ use futures::executor::block_on;
 use log::info;
 use rusty_zigbee_dongle::{
     cc253x::CC253X,
-    coordinator::{Coordinator, CoordinatorError, LedStatus, ZigbeeEvent},
-    utils::sleep::{async_delay, sleep_forever},
+    coordinator::{Coordinator, CoordinatorError, ZigbeeEvent},
+    utils::sleep::sleep_forever,
 };
 use std::path::PathBuf;
 
@@ -48,22 +48,6 @@ fn main() {
             .await
             .unwrap();
 
-        // Not all firmware versions support LED write as far as I understood
-        let _a = async {
-            loop {
-                cc2531.set_led(LedStatus::On).await.unwrap();
-                async_delay(std::time::Duration::from_secs(1))
-                    .await
-                    .unwrap();
-                cc2531.set_led(LedStatus::Off).await.unwrap();
-                async_delay(std::time::Duration::from_secs(1))
-                    .await
-                    .unwrap();
-            }
-
-            #[allow(unreachable_code)]
-            Ok::<(), CoordinatorError>(unreachable!())
-        };
         let b = async {
             info!("starting...");
             cc2531.start().await.unwrap();
