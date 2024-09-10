@@ -52,6 +52,8 @@ fn main() {
             cc2531.start().await.unwrap();
             let version = cc2531.version().await.unwrap();
             info!("version: {:?}", version);
+            let device_info = cc2531.device_info().await.unwrap();
+            info!("device_info: {:?}", device_info);
             cc2531
                 .permit_join(std::time::Duration::from_secs(100), None)
                 .await

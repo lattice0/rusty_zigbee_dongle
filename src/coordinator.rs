@@ -1,4 +1,7 @@
-use crate::{unpi::{commands::ParameterError, parameters::ParameterValue}, utils::map::MapError};
+use crate::{
+    unpi::{commands::ParameterError, parameters::ParameterValue},
+    utils::map::{MapError, StaticMap},
+};
 use std::future::Future;
 
 pub type OnEvent = Box<dyn Fn(ZigbeeEvent) -> Result<(), CoordinatorError>>;
@@ -52,7 +55,55 @@ pub trait Coordinator {
             }
         }
     }
-    fn device_info(&self) -> impl Future<Output = Result<(), CoordinatorError>>;
+    fn device_info(&self) -> impl Future<Output = Result<DeviceInfo, CoordinatorError>>;
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct DeviceInfo {
+    pub status: u8,
+    pub ieee_addr: [u8; 8],
+    pub short_addr: u16,
+    pub device_type: u8,
+    pub device_state: u8,
+    pub num_assoc_devices: u8,
+    pub assoc_devices_list: [u16; 16],
+}
+
+impl TryFrom<StaticMap<15, &'static str, ParameterValue>> for DeviceInfo {
+    type Error = CoordinatorError;
+
+    fn try_from(map: StaticMap<15, &'static str, ParameterValue>) -> Result<Self, Self::Error> {
+        Ok(DeviceInfo {
+            status: map
+                .get(&"status")
+                .ok_or(CoordinatorError::MissingKey)?
+                .try_into_u8()?,
+            ieee_addr: map
+                .get(&"ieee_addr")
+                .ok_or(CoordinatorError::MissingKey)?
+                .try_into_ieee_addr()?,
+            short_addr: map
+                .get(&"short_addr")
+                .ok_or(CoordinatorError::MissingKey)?
+                .try_into_u16()?,
+            device_type: map
+                .get(&"device_type")
+                .ok_or(CoordinatorError::MissingKey)?
+                .try_into_u8()?,
+            device_state: map
+                .get(&"device_state")
+                .ok_or(CoordinatorError::MissingKey)?
+                .try_into_u8()?,
+            num_assoc_devices: map
+                .get(&"num_assoc_devices")
+                .ok_or(CoordinatorError::MissingKey)?
+                .try_into_u8()?,
+            assoc_devices_list: map
+                .get(&"assoc_devices_list")
+                .ok_or(CoordinatorError::MissingKey)?
+                .try_into_list_u16()?,
+        })
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -104,7 +155,7 @@ pub enum CoordinatorError {
     SerialOpen(String),
     SerialWrite,
     SerialRead,
-    NoCommandWithName,
+    NoCommandWithName(String),
     Io(String),
     Parameter(ParameterError),
     InvalidChannel,
@@ -117,6 +168,7 @@ pub enum CoordinatorError {
     InterpanMode,
     DurationTooLong,
     CoordinatorOpen,
+    MissingKey,
 }
 
 impl From<std::io::Error> for CoordinatorError {

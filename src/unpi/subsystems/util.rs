@@ -16,7 +16,7 @@ pub const COMMANDS_UTIL: &[Command] = &[
             ("device_type", ParameterType::U8),
             ("device_state", ParameterType::U8),
             ("num_assoc_devices", ParameterType::U8),
-            ("assoc_devices_list", ParameterType::ListU16),
+            ("assoc_devices_list", ParameterType::ListU16(None)),
         ])),
     },
     Command {

@@ -1,11 +1,14 @@
 use crate::{
     coordinator::{
-        AddressMode, Coordinator, CoordinatorError, LedStatus, OnEvent, ResetType, ZigbeeEvent,
+        AddressMode, Coordinator, CoordinatorError, DeviceInfo, LedStatus, OnEvent, ResetType,
+        ZigbeeEvent,
     },
     serial::{simple_serial_port::SimpleSerialPort, SubscriptionSerial},
     subscription::{Predicate, Subscription, SubscriptionService},
     unpi::{
-        commands::{get_command_by_name, ParametersValueMap}, parameters::ParameterValue, LenTypeInfo, MessageType, SUnpiPacket, Subsystem
+        commands::{get_command_by_name, ParametersValueMap},
+        parameters::ParameterValue,
+        LenTypeInfo, MessageType, SUnpiPacket, Subsystem,
     },
     utils::{error, info, trace, warn},
 };
@@ -52,8 +55,8 @@ impl<S: SubscriptionSerial> CC253X<S> {
         subsystem: Subsystem,
         parameters: &[(&'static str, ParameterValue)],
     ) -> Result<(), CoordinatorError> {
-        let command =
-            get_command_by_name(&subsystem, name).ok_or(CoordinatorError::NoCommandWithName)?;
+        let command = get_command_by_name(&subsystem, name)
+            .ok_or(CoordinatorError::NoCommandWithName(name.to_string()))?;
         let packet = SUnpiPacket::from_command_owned(
             LenTypeInfo::OneByte,
             (command.command_type, subsystem),
@@ -70,15 +73,15 @@ impl<S: SubscriptionSerial> CC253X<S> {
         subsystem: Subsystem,
         parameters: &[(&'static str, ParameterValue)],
     ) -> Result<ParametersValueMap, CoordinatorError> {
-        let command =
-            get_command_by_name(&subsystem, name).ok_or(CoordinatorError::NoCommandWithName)?;
+        let command = get_command_by_name(&subsystem, name)
+            .ok_or(CoordinatorError::NoCommandWithName(name.to_string()))?;
         let packet = SUnpiPacket::from_command_owned(
             LenTypeInfo::OneByte,
             (command.command_type, subsystem),
             parameters,
             command,
         )?;
-        let wait = self.wait_for(name, MessageType::SRESP, Subsystem::Sys, None);
+        let wait = self.wait_for(name, MessageType::SRESP, subsystem, None);
         let send = async {
             let mut lock = self.serial.lock().await;
             lock.write(&packet).await
@@ -94,8 +97,8 @@ impl<S: SubscriptionSerial> CC253X<S> {
         subsystem: Subsystem,
         _timeout: Option<std::time::Duration>,
     ) -> Result<SUnpiPacket, CoordinatorError> {
-        let command =
-            get_command_by_name(&subsystem, name).ok_or(CoordinatorError::NoCommandWithName)?;
+        let command = get_command_by_name(&subsystem, name)
+            .ok_or(CoordinatorError::NoCommandWithName(name.to_string()))?;
         let subscriptions = self.subscriptions.clone();
         let (tx, rx): (Sender<SUnpiPacket>, Receiver<SUnpiPacket>) = oneshot::channel();
         {
@@ -322,10 +325,12 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
         Ok(())
     }
 
-    async fn device_info(&self) -> Result<(), CoordinatorError> {
-        let response = self
+    async fn device_info(&self) -> Result<DeviceInfo, CoordinatorError> {
+        info!("getting device info...");
+        let device_info: DeviceInfo = self
             .request_with_reply("get_device_info", Subsystem::Util, &[])
-            .await?;
-        todo!()
+            .await?
+            .try_into()?;
+        Ok(device_info)
     }
 }

@@ -36,14 +36,14 @@ impl Command {
                 // Find parameter in request
                 let parameter_type = request
                     .get(name)
-                    .ok_or(CoordinatorError::NoCommandWithName)?;
+                    .ok_or(CoordinatorError::NoCommandWithName(name.to_string()))?;
                 if request.contains_key(name) {
                     // Only writes if we match the parameter type
                     let written = value.match_and_write(parameter_type, output)?;
                     let new_output = std::mem::take(&mut output);
                     output = &mut new_output[written..];
                 } else {
-                    return Err(CoordinatorError::NoCommandWithName);
+                    return Err(CoordinatorError::NoCommandWithName(name.to_string()));
                 }
 
                 //log!("COMMAND: {}, VALUE {:?}", name, value);
@@ -59,16 +59,44 @@ impl Command {
             .response
             .as_ref()
             .ok_or(CoordinatorError::ResponseMismatch)?;
-        let mut parameters: ParametersValueMap = Default::default();
-        response.iter().try_for_each(|(name, parameter_type)| {
-            let value = parameter_type.from_slice_reader(&mut reader)?;
-            parameters.insert(name, value)?;
-            Ok::<(), CoordinatorError>(())
-        })?;
+        let parameters = match self.name {
+            // Special case for get_device_info, where num_assoc_devices specifies the list length before it comes
+            "get_device_info" => {
+                let mut parameters: ParametersValueMap = Default::default();
+                let status = reader.read_u8()?;
+                let ieee_addr = reader.read_u8_array(8)?;
+                let short_addr = reader.read_u16_le()?;
+                let device_type = reader.read_u8()?;
+                let device_state = reader.read_u8()?;
+                let num_assoc_devices = reader.read_u8()?;
+                let assoc_devices_list = reader.read_u16_array(16)?;
+                parameters.insert("status", ParameterValue::U8(status))?;
+                parameters.insert("ieee_addr", ParameterValue::IeeAddress(ieee_addr))?;
+                parameters.insert("short_addr", ParameterValue::U16(short_addr))?;
+                parameters.insert("device_type", ParameterValue::U8(device_type))?;
+                parameters.insert("device_state", ParameterValue::U8(device_state))?;
+                parameters.insert("num_assoc_devices", ParameterValue::U8(num_assoc_devices))?;
+                parameters.insert(
+                    "assoc_devices_list",
+                    ParameterValue::ListU16(assoc_devices_list),
+                )?;
+                parameters
+            }
+            _ => {
+                let mut parameters: ParametersValueMap = Default::default();
+                response.iter().try_for_each(|(name, parameter_type)| {
+                    let value = parameter_type.from_slice_reader(&mut reader)?;
+                    parameters.insert(name, value)?;
+                    Ok::<(), CoordinatorError>(())
+                })?;
+                parameters
+            }
+        };
         Ok(parameters)
     }
 }
 
+/// Get a command by name, linear (kinda slow) search over the static slice
 pub fn get_command_by_name(subsystem: &Subsystem, name: &str) -> Option<&'static Command> {
     SUBSYSTEMS
         .iter()
@@ -76,6 +104,7 @@ pub fn get_command_by_name(subsystem: &Subsystem, name: &str) -> Option<&'static
         .and_then(|(_, cmds)| cmds.iter().find(|c| c.name == name))
 }
 
+/// Get a command by name, linear (kinda slow) search over the static slice
 pub fn get_command_by_id(subsystem: &Subsystem, id: u8) -> Option<&'static Command> {
     SUBSYSTEMS
         .iter()
@@ -88,6 +117,8 @@ pub enum ParameterError {
     InvalidParameter,
     Io(String),
     NoCommandWithName,
+    Unreachable,
+    MissingListLength,
 }
 
 impl From<std::io::Error> for ParameterError {

@@ -9,7 +9,7 @@ pub enum ParameterType {
     U32,
     I8,
     IdeeAddr,
-    ListU16,
+    ListU16(Option<usize>),
 }
 
 impl ParameterType {
@@ -17,18 +17,60 @@ impl ParameterType {
         &self,
         reader: &mut SliceReader,
     ) -> Result<ParameterValue, ParameterError> {
-        /*
-        const octets = Array.from(this.readBuffer(8).reverse());
-        return `0x${octets.map((octet) => octet.toString(16).padStart(2, '0')).join('')}`;
-         */
         Ok(match self {
             ParameterType::U8 => ParameterValue::U8(reader.read_u8()?),
             ParameterType::U16 => ParameterValue::U16(reader.read_u16_le()?),
             ParameterType::U32 => ParameterValue::U32(reader.read_u32_le()?),
             ParameterType::I8 => ParameterValue::I8(reader.read_i8()?),
-            ParameterType::IdeeAddr => ParameterValue::IeeAddress(reader.read_array(8)?),
-            ParameterType::ListU16 => todo!(),
+            ParameterType::IdeeAddr => ParameterValue::IeeAddress(reader.read_u8_array(8)?),
+            ParameterType::ListU16(len) => ParameterValue::ListU16(
+                reader.read_u16_array(len.ok_or(ParameterError::MissingListLength)?)?,
+            ),
         })
+    }
+}
+
+impl ParameterValue {
+    pub fn try_into_u8(&self) -> Result<u8, ParameterError> {
+        match self {
+            ParameterValue::U8(v) => Ok(*v),
+            _ => Err(ParameterError::InvalidParameter),
+        }
+    }
+
+    pub fn try_into_u16(&self) -> Result<u16, ParameterError> {
+        match self {
+            ParameterValue::U16(v) => Ok(*v),
+            _ => Err(ParameterError::InvalidParameter),
+        }
+    }
+
+    pub fn try_into_u32(&self) -> Result<u32, ParameterError> {
+        match self {
+            ParameterValue::U32(v) => Ok(*v),
+            _ => Err(ParameterError::InvalidParameter),
+        }
+    }
+
+    pub fn try_into_i8(&self) -> Result<i8, ParameterError> {
+        match self {
+            ParameterValue::I8(v) => Ok(*v),
+            _ => Err(ParameterError::InvalidParameter),
+        }
+    }
+
+    pub fn try_into_ieee_addr(&self) -> Result<[u8; 8], ParameterError> {
+        match self {
+            ParameterValue::IeeAddress(v) => Ok(*v),
+            _ => Err(ParameterError::InvalidParameter),
+        }
+    }
+
+    pub fn try_into_list_u16(&self) -> Result<[u16; 16], ParameterError> {
+        match self {
+            ParameterValue::ListU16(v) => Ok(*v),
+            _ => Err(ParameterError::InvalidParameter),
+        }
     }
 }
 
@@ -39,7 +81,7 @@ pub enum ParameterValue {
     U32(u32),
     I8(i8),
     IeeAddress([u8; 8]),
-    ListU16([u8; 16]),
+    ListU16([u16; 16]),
 }
 
 impl PartialEq<ParameterType> for ParameterValue {
@@ -50,7 +92,7 @@ impl PartialEq<ParameterType> for ParameterValue {
             ParameterValue::U32(_) => other == &ParameterType::U32,
             ParameterValue::I8(_) => other == &ParameterType::I8,
             ParameterValue::IeeAddress(_) => other == &ParameterType::IdeeAddr,
-            ParameterValue::ListU16(_) => other == &ParameterType::ListU16,
+            ParameterValue::ListU16(_) => matches!(other, ParameterType::ListU16(_)),
         }
     }
 }
@@ -84,4 +126,20 @@ impl ParameterValue {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use crate::utils::slice_reader::SliceReader;
+
+    #[test]
+    fn read_u8() {
+        let mut reader = SliceReader(&[0x01]);
+        let value = reader.read_u8().unwrap();
+        assert_eq!(value, 0x01);
+    }
+
+    #[test]
+    fn read_ieee_address() {
+        let mut reader = SliceReader(&[0x01, 0x02, 0x03, 0x04, 0x05, 0x06]);
+        let value = reader.read_u8_array(6).unwrap();
+        assert_eq!(value, [0x01, 0x02, 0x03, 0x04, 0x05, 0x06]);
+    }
+}
