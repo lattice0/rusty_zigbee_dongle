@@ -7,6 +7,7 @@ use crate::{
     subscription::{Predicate, Subscription, SubscriptionService},
     unpi::{
         commands::{get_command_by_name, ParametersValueMap},
+        constants::CommandStatus,
         parameters::ParameterValue,
         LenTypeInfo, MessageType, SUnpiPacket, Subsystem,
     },
@@ -114,6 +115,20 @@ impl<S: SubscriptionSerial> CC253X<S> {
         }
 
         rx.await.map_err(|_| CoordinatorError::SubscriptionError)
+    }
+
+    pub async fn begin_startup(&self) -> Result<CommandStatus, CoordinatorError> {
+        info!("beginning startup...");
+        let reply = self
+            .request_with_reply(
+                "startup_from_app",
+                Subsystem::Zdo,
+                &[("start_delay", ParameterValue::U16(100))],
+            )
+            .await?;
+        Ok(reply
+            .try_into()
+            .map_err(|_| CoordinatorError::InvalidCommandStatus)?)
     }
 }
 

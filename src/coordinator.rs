@@ -169,6 +169,8 @@ pub enum CoordinatorError {
     DurationTooLong,
     CoordinatorOpen,
     MissingKey,
+    ParameterNotFound(String),
+    InvalidCommandStatus
 }
 
 impl From<std::io::Error> for CoordinatorError {

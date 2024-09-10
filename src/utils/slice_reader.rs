@@ -46,7 +46,7 @@ impl<'a> SliceReader<'a> {
         len: usize,
     ) -> Result<[u16; N], std::io::Error> {
         let mut buffer = [0u16; N];
-        buffer.iter_mut().try_for_each(|x| {
+        buffer.iter_mut().take(len).try_for_each(|x| {
             *x = self.read_u16_le()?;
             Ok::<(), std::io::Error>(())
         })?;

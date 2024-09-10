@@ -69,7 +69,7 @@ impl Command {
                 let device_type = reader.read_u8()?;
                 let device_state = reader.read_u8()?;
                 let num_assoc_devices = reader.read_u8()?;
-                let assoc_devices_list = reader.read_u16_array(16)?;
+                let assoc_devices_list = reader.read_u16_array(num_assoc_devices as usize)?;
                 parameters.insert("status", ParameterValue::U8(status))?;
                 parameters.insert("ieee_addr", ParameterValue::IeeAddress(ieee_addr))?;
                 parameters.insert("short_addr", ParameterValue::U16(short_addr))?;
