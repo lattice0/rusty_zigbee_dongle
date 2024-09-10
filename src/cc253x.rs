@@ -119,15 +119,19 @@ impl<S: SubscriptionSerial> CC253X<S> {
 
     pub async fn begin_startup(&self) -> Result<CommandStatus, CoordinatorError> {
         info!("beginning startup...");
-        let reply = self
-            .request_with_reply(
-                "startup_from_app",
-                Subsystem::Zdo,
-                &[("start_delay", ParameterValue::U16(100))],
-            )
-            .await?;
-        Ok(reply
-            .try_into()
+        let command_name = "state_changed_ind";
+        let command = get_command_by_name(&Subsystem::Zdo, command_name).ok_or(
+            CoordinatorError::NoCommandWithName(command_name.to_string()),
+        )?;
+        let wait = self.wait_for(&command.name, MessageType::AREQ, Subsystem::Zdo, None);
+        let send = self.request(
+            "startup_from_app",
+            Subsystem::Zdo,
+            &[("start_delay", ParameterValue::U16(100))],
+        );
+        let r = futures::try_join!(send, wait)
+            .map(|(_, packet)| command.read_and_fill(packet.payload.as_slice()))??;
+        Ok(r.try_into()
             .map_err(|_| CoordinatorError::InvalidCommandStatus)?)
     }
 }

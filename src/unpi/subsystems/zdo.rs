@@ -48,4 +48,11 @@ pub const COMMANDS_ZDO: &[Command] = &[
         ])),
         response: Some(StaticMap::new(&[("status", ParameterType::U8)])),
     },
+    Command {
+        name: "state_changed_ind",
+        id: 192,
+        command_type: MessageType::AREQ,
+        request: Some(StaticMap::new(&[("state", ParameterType::U8)])),
+        response: None,
+    }
 ];
