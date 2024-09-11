@@ -62,9 +62,13 @@ impl SubscriptionSerial for SimpleSerialPort {
         let mut receive_from_serial_send_to_channel = move || -> Result<(), SerialThreadError> {
             loop {
                 let mut buffer = [0u8; 256];
-                let len = read
-                    .read(&mut buffer)
-                    .map_err(|e| SerialThreadError::SerialRead(e.to_string()))?;
+                let len = match read.read(&mut buffer) {
+                    Ok(r) => Ok(r),
+                    Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {
+                        continue;
+                    }
+                    Err(e) => return Err(SerialThreadError::SerialRead(e.to_string())),
+                }?;
                 if let Some(start_of_frame_position) = buffer.iter().position(|&x| x == 0xfe) {
                     let packet: UnpiPacket<Vec<u8>> = UnpiPacket::try_from((
                         &buffer[start_of_frame_position..len],
