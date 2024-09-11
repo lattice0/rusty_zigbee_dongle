@@ -13,7 +13,7 @@ use futures::{
 };
 use std::{sync::Arc, thread::JoinHandle};
 
-const DEFAULT_READ_TIMEOUT_MS: u64 = 10000;
+const DEFAULT_READ_TIMEOUT_MS: u64 = 10;
 
 // Simplest possible serial port implementation
 pub struct SimpleSerialPort {
