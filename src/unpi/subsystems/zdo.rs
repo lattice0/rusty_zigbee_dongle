@@ -54,5 +54,17 @@ pub const COMMANDS_ZDO: &[Command] = &[
         command_type: MessageType::AREQ,
         request: Some(StaticMap::new(&[("state", ParameterType::U8)])),
         response: None,
-    }
+    },
+    Command {
+        name: "tc_device_index",
+        id: 202,
+        command_type: MessageType::AREQ,
+        request: Some(StaticMap::new(&[
+            ("network_address", ParameterType::U16),
+            ("extended_address", ParameterType::IeeeAddress),
+            ("parent_address", ParameterType::U16),
+        ])),
+        response: None,
+    },
 ];
+

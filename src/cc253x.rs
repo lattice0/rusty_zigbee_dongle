@@ -4,7 +4,7 @@ use crate::{
         ZigbeeEvent,
     },
     serial::{simple_serial_port::SimpleSerialPort, SubscriptionSerial},
-    subscription::{Predicate, Subscription, SubscriptionService},
+    subscription::{Action, Event, Predicate, Subscription, SubscriptionService},
     unpi::{
         commands::{get_command_by_name, Command, ParametersValueMap},
         constants::CommandStatus,
@@ -26,12 +26,33 @@ pub struct CC253X<S: SubscriptionSerial> {
     _supports_led: Option<bool>,
     subscriptions: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
     serial: Arc<Mutex<S>>,
-    on_zigbee_event: Option<OnEvent>,
+    on_zigbee_event: Arc<Mutex<Option<Option<OnEvent>>>>,
 }
 
 impl CC253X<SimpleSerialPort> {
     pub fn from_path(path: PathBuf, baud_rate: u32) -> Result<Self, CoordinatorError> {
-        let subscriptions = Arc::new(Mutex::new(SubscriptionService::new()));
+        let on_zigbee_event = Arc::new(Mutex::new(None));
+        let mut subscription_service = SubscriptionService::new();
+
+        let device_announce_command = get_command_by_name(&Subsystem::Zdo, "tc_device_index")
+            .ok_or(CoordinatorError::NoCommandWithName(
+                "tc_device_index".to_string(),
+            ))?;
+        subscription_service.subscribe(Subscription::Event(
+            Predicate(Box::new(|packet: &SUnpiPacket| {
+                packet.type_subsystem == (MessageType::AREQ, Subsystem::Zdo)
+                    && packet.command == device_announce_command.id
+            })),
+            Event(Box::new(|packet: &SUnpiPacket| {
+                on_zigbee_event.lock().await.as_ref().unwrap().as_ref().unwrap()(
+                    ZigbeeEvent::DeviceAnnounce {
+                        network_address: packet.payload[0] as u16,
+                        ieee_address: ieee802154::mac::Address::from(packet.payload[1..9].try_into().unwrap()),
+                    }
+                ).unwrap();
+            })),
+        ));
+        let subscriptions = Arc::new(Mutex::new(subscription_service));
 
         let mut serial = SimpleSerialPort::new(
             path.to_str()
@@ -44,7 +65,7 @@ impl CC253X<SimpleSerialPort> {
             serial: Arc::new(Mutex::new(serial)),
             _supports_led: None,
             subscriptions: subscriptions.clone(),
-            on_zigbee_event: None,
+            on_zigbee_event,
         })
     }
 }
@@ -109,7 +130,9 @@ impl<S: SubscriptionSerial> CC253X<S> {
                     packet.type_subsystem == (message_type, subsystem)
                         && packet.command == command.id
                 })),
-                tx,
+                Action(Box::new(move |packet: &SUnpiPacket| {
+                    let _ = tx.send(packet.clone());
+                })),
             );
             s.subscribe(subscription);
         }
@@ -358,7 +381,10 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
         &mut self,
         on_zigbee_event: Box<dyn Fn(ZigbeeEvent) -> Result<(), CoordinatorError>>,
     ) -> Result<(), CoordinatorError> {
-        self.on_zigbee_event = Some(on_zigbee_event);
+        self.on_zigbee_event
+            .lock()
+            .await
+            .replace(Some(Box::new(on_zigbee_event)));
         Ok(())
     }
 

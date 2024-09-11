@@ -11,7 +11,7 @@ pub const COMMANDS_UTIL: &[Command] = &[
         request: None,
         response: Some(StaticMap::new(&[
             ("status", ParameterType::U8),
-            ("ieee_addr", ParameterType::IdeeAddr),
+            ("ieee_addr", ParameterType::IeeeAddress),
             ("short_addr", ParameterType::U16),
             ("device_type", ParameterType::U8),
             ("device_state", ParameterType::U8),

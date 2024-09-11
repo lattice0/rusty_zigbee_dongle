@@ -8,7 +8,7 @@ pub enum ParameterType {
     U16,
     U32,
     I8,
-    IdeeAddr,
+    IeeeAddress,
     ListU16(Option<usize>),
 }
 
@@ -22,7 +22,7 @@ impl ParameterType {
             ParameterType::U16 => ParameterValue::U16(reader.read_u16_le()?),
             ParameterType::U32 => ParameterValue::U32(reader.read_u32_le()?),
             ParameterType::I8 => ParameterValue::I8(reader.read_i8()?),
-            ParameterType::IdeeAddr => ParameterValue::IeeAddress(reader.read_u8_array(8)?),
+            ParameterType::IeeeAddress => ParameterValue::IeeAddress(reader.read_u8_array(8)?),
             ParameterType::ListU16(len) => ParameterValue::ListU16(
                 reader.read_u16_array(len.ok_or(ParameterError::MissingListLength)?)?,
             ),
@@ -91,7 +91,7 @@ impl PartialEq<ParameterType> for ParameterValue {
             ParameterValue::U16(_) => other == &ParameterType::U16,
             ParameterValue::U32(_) => other == &ParameterType::U32,
             ParameterValue::I8(_) => other == &ParameterType::I8,
-            ParameterValue::IeeAddress(_) => other == &ParameterType::IdeeAddr,
+            ParameterValue::IeeAddress(_) => other == &ParameterType::IeeeAddress,
             ParameterValue::ListU16(_) => matches!(other, ParameterType::ListU16(_)),
         }
     }
