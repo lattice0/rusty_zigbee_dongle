@@ -15,9 +15,10 @@ use crate::{
 };
 use futures::{
     channel::oneshot::{self, Receiver, Sender},
+    executor::block_on,
     lock::Mutex,
 };
-use std::{path::PathBuf, sync::Arc};
+use std::{ops::Deref, path::PathBuf, sync::Arc};
 
 //TODO: fix this
 const MAXIMUM_ZIGBEE_PAYLOAD_SIZE: usize = 255;
@@ -26,30 +27,35 @@ pub struct CC253X<S: SubscriptionSerial> {
     _supports_led: Option<bool>,
     subscriptions: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
     serial: Arc<Mutex<S>>,
-    on_zigbee_event: Arc<Mutex<Option<Option<OnEvent>>>>,
+    on_zigbee_event: Arc<Mutex<Option<OnEvent>>>,
 }
 
 impl CC253X<SimpleSerialPort> {
     pub fn from_path(path: PathBuf, baud_rate: u32) -> Result<Self, CoordinatorError> {
-        let on_zigbee_event = Arc::new(Mutex::new(None));
+        let on_zigbee_event = Arc::new(Mutex::new(Option::<OnEvent>::None));
         let mut subscription_service = SubscriptionService::new();
 
         let device_announce_command = get_command_by_name(&Subsystem::Zdo, "tc_device_index")
             .ok_or(CoordinatorError::NoCommandWithName(
                 "tc_device_index".to_string(),
             ))?;
+        let _on_zigbee_event = on_zigbee_event.clone();
         subscription_service.subscribe(Subscription::Event(
             Predicate(Box::new(|packet: &SUnpiPacket| {
                 packet.type_subsystem == (MessageType::AREQ, Subsystem::Zdo)
                     && packet.command == device_announce_command.id
             })),
-            Event(Box::new(|packet: &SUnpiPacket| {
-                on_zigbee_event.lock().await.as_ref().unwrap().as_ref().unwrap()(
-                    ZigbeeEvent::DeviceAnnounce {
-                        network_address: packet.payload[0] as u16,
-                        ieee_address: ieee802154::mac::Address::from(packet.payload[1..9].try_into().unwrap()),
+            Event(Box::new(move |packet: &SUnpiPacket| {
+                let a = async {
+                    if let Some(on_zigbee_event) = _on_zigbee_event.lock().await.deref() {
+                        (on_zigbee_event)(ZigbeeEvent::DeviceAnnounce {
+                            network_address: packet.payload[0] as u16,
+                            ieee_address: packet.payload[1..9].try_into().unwrap(),
+                        })
+                        .unwrap();
                     }
-                ).unwrap();
+                };
+                block_on(a);
             })),
         ));
         let subscriptions = Arc::new(Mutex::new(subscription_service));
@@ -377,14 +383,11 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
             .await
     }
 
-    async fn set_on_event(
-        &mut self,
-        on_zigbee_event: Box<dyn Fn(ZigbeeEvent) -> Result<(), CoordinatorError>>,
-    ) -> Result<(), CoordinatorError> {
+    async fn set_on_event(&mut self, on_zigbee_event: OnEvent) -> Result<(), CoordinatorError> {
         self.on_zigbee_event
             .lock()
             .await
-            .replace(Some(Box::new(on_zigbee_event)));
+            .replace(Box::new(on_zigbee_event));
         Ok(())
     }
 

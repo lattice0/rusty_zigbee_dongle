@@ -4,7 +4,7 @@ use crate::{
 };
 use std::future::Future;
 
-pub type OnEvent = Box<dyn Fn(ZigbeeEvent) -> Result<(), CoordinatorError>>;
+pub type OnEvent = Box<dyn Fn(ZigbeeEvent) -> Result<(), CoordinatorError> + Send + Sync>;
 
 pub trait Coordinator {
     type ZclFrame;
@@ -44,7 +44,7 @@ pub trait Coordinator {
     ) -> impl Future<Output = Result<Option<Self::ZclPayload<'static>>, CoordinatorError>>;
     fn set_on_event(
         &mut self,
-        on_zigbee_event: Box<dyn Fn(ZigbeeEvent) -> Result<(), CoordinatorError>>,
+        on_zigbee_event: OnEvent,
     ) -> impl Future<Output = Result<(), CoordinatorError>>;
     fn error_if_interpan_mode(&self) -> impl Future<Output = Result<(), CoordinatorError>> {
         async {
@@ -172,7 +172,7 @@ pub enum CoordinatorError {
     ParameterNotFound(String),
     InvalidCommandStatus,
     InvalidResponse,
-    InvalidMessageType
+    InvalidMessageType,
 }
 
 impl From<std::io::Error> for CoordinatorError {
