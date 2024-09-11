@@ -12,7 +12,7 @@ pub const MAX_COMMAND_SIZE: usize = 15;
 pub type ParametersValueMap = StaticMap<MAX_COMMAND_SIZE, &'static str, ParameterValue>;
 pub type ParametersTypeMap = StaticMap<MAX_COMMAND_SIZE, &'static str, ParameterType>;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 /// Represents a command in the UNPI protocol.
 pub struct Command {
     pub name: &'static str,
@@ -46,7 +46,6 @@ impl Command {
                     return Err(CoordinatorError::NoCommandWithName(name.to_string()));
                 }
 
-                //log!("COMMAND: {}, VALUE {:?}", name, value);
                 Ok::<(), CoordinatorError>(())
             })?;
         }
@@ -55,10 +54,6 @@ impl Command {
 
     pub fn read_and_fill(&self, input: &[u8]) -> Result<ParametersValueMap, CoordinatorError> {
         let mut reader = SliceReader(input);
-        let response = self
-            .response
-            .as_ref()
-            .ok_or(CoordinatorError::ResponseMismatch)?;
         let parameters = match self.name {
             // Special case for get_device_info, where num_assoc_devices specifies the list length before it comes
             "get_device_info" => {
@@ -83,13 +78,29 @@ impl Command {
                 parameters
             }
             _ => {
-                let mut parameters: ParametersValueMap = Default::default();
-                response.iter().try_for_each(|(name, parameter_type)| {
-                    let value = parameter_type.from_slice_reader(&mut reader)?;
-                    parameters.insert(name, value)?;
-                    Ok::<(), CoordinatorError>(())
-                })?;
-                parameters
+                //Asynchronous request
+                if let (Some(request), MessageType::AREQ) = (self.request, self.command_type) {
+                    let mut parameters: ParametersValueMap = Default::default();
+                    request.iter().try_for_each(|(name, parameter_type)| {
+                        let value = parameter_type.from_slice_reader(&mut reader)?;
+                        parameters.insert(name, value)?;
+                        Ok::<(), CoordinatorError>(())
+                    })?;
+                    parameters
+                } else if let (Some(response), MessageType::SRESP) =
+                    (self.response, self.command_type)
+                {
+                    let mut parameters: ParametersValueMap = Default::default();
+                    response.iter().try_for_each(|(name, parameter_type)| {
+                        let value = parameter_type.from_slice_reader(&mut reader)?;
+                        parameters.insert(name, value)?;
+                        Ok::<(), CoordinatorError>(())
+                    })?;
+                    parameters
+                } else {
+                    println!("invalid response, command: {:?}", self);
+                    return Err(CoordinatorError::InvalidResponse);
+                }
             }
         };
         Ok(parameters)

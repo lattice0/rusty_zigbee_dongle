@@ -6,7 +6,7 @@ use crate::{
     serial::{simple_serial_port::SimpleSerialPort, SubscriptionSerial},
     subscription::{Predicate, Subscription, SubscriptionService},
     unpi::{
-        commands::{get_command_by_name, ParametersValueMap},
+        commands::{get_command_by_name, Command, ParametersValueMap},
         constants::CommandStatus,
         parameters::ParameterValue,
         LenTypeInfo, MessageType, SUnpiPacket, Subsystem,
@@ -88,7 +88,7 @@ impl<S: SubscriptionSerial> CC253X<S> {
             lock.write(&packet).await
         };
         futures::try_join!(send, wait)
-            .map(|(_, packet)| command.read_and_fill(packet.payload.as_slice()))?
+            .map(|(_, (packet, command))| command.read_and_fill(packet.payload.as_slice()))?
     }
 
     pub async fn wait_for(
@@ -97,7 +97,7 @@ impl<S: SubscriptionSerial> CC253X<S> {
         message_type: MessageType,
         subsystem: Subsystem,
         _timeout: Option<std::time::Duration>,
-    ) -> Result<SUnpiPacket, CoordinatorError> {
+    ) -> Result<(SUnpiPacket, Command), CoordinatorError> {
         let command = get_command_by_name(&subsystem, name)
             .ok_or(CoordinatorError::NoCommandWithName(name.to_string()))?;
         let subscriptions = self.subscriptions.clone();
@@ -113,8 +113,17 @@ impl<S: SubscriptionSerial> CC253X<S> {
             );
             s.subscribe(subscription);
         }
-
-        rx.await.map_err(|_| CoordinatorError::SubscriptionError)
+        let mut response_command = command.clone();
+        // We rewrite the command as being a response if it was a request
+        match response_command.command_type {
+            MessageType::AREQ => response_command.command_type = MessageType::AREQ,
+            MessageType::SREQ => response_command.command_type = MessageType::SRESP,
+            _ => return Err(CoordinatorError::InvalidMessageType),
+        }
+        Ok((
+            rx.await.map_err(|_| CoordinatorError::SubscriptionError)?,
+            response_command,
+        ))
     }
 
     pub async fn begin_startup(&self) -> Result<CommandStatus, CoordinatorError> {
@@ -129,10 +138,19 @@ impl<S: SubscriptionSerial> CC253X<S> {
             Subsystem::Zdo,
             &[("start_delay", ParameterValue::U16(100))],
         );
-        let r = futures::try_join!(send, wait)
-            .map(|(_, packet)| command.read_and_fill(packet.payload.as_slice()))??;
-        Ok(r.try_into()
-            .map_err(|_| CoordinatorError::InvalidCommandStatus)?)
+        let r = futures::try_join!(send, wait).map(|(_, (packet, command))| {
+            info!("reading filling command: {:?}", command);
+            command.read_and_fill(packet.payload.as_slice())
+        })??;
+        let c = TryInto::<CommandStatus>::try_into(r);
+        let r = match c {
+            Ok(c) => c,
+            Err(_) => {
+                error!("error converting to CommandStatus: {:?}", r);
+                return Err(CoordinatorError::InvalidCommandStatus);
+            }
+        };
+        Ok(r)
     }
 }
 

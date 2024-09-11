@@ -76,8 +76,8 @@ where
 #[derive(Debug, PartialEq)]
 pub enum SerialThreadError {
     SerialOpen,
-    SerialRead,
-    SerialWrite,
+    SerialRead(String),
+    SerialWrite(String),
     MalformedPacket,
     SubscriptionWrite,
     PacketParse,

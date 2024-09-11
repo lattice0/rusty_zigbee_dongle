@@ -170,7 +170,9 @@ pub enum CoordinatorError {
     CoordinatorOpen,
     MissingKey,
     ParameterNotFound(String),
-    InvalidCommandStatus
+    InvalidCommandStatus,
+    InvalidResponse,
+    InvalidMessageType
 }
 
 impl From<std::io::Error> for CoordinatorError {

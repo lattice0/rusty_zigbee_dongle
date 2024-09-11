@@ -3,7 +3,7 @@ use crate::{
     coordinator::CoordinatorError,
     subscription::SubscriptionService,
     unpi::{LenTypeInfo, SUnpiPacket, UnpiPacket},
-    utils::trace,
+    utils::{error, trace},
 };
 use futures::StreamExt;
 use futures::{channel::mpsc, executor::block_on, SinkExt};
@@ -13,7 +13,7 @@ use futures::{
 };
 use std::{sync::Arc, thread::JoinHandle};
 
-const DEFAULT_READ_TIMEOUT_MS: u64 = 10;
+const DEFAULT_READ_TIMEOUT_MS: u64 = 10000;
 
 // Simplest possible serial port implementation
 pub struct SimpleSerialPort {
@@ -32,7 +32,7 @@ impl SimpleSerialPort {
         baud_rate: u32,
         subscription_service: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
     ) -> Result<Self, CoordinatorError> {
-        let to_serial = mpsc::channel(10);
+        let to_serial = mpsc::channel(20);
         let to_serial = (Some(to_serial.0), Some(to_serial.1));
         Ok(SimpleSerialPort {
             path: path.to_string(),
@@ -59,18 +59,18 @@ impl SubscriptionSerial for SimpleSerialPort {
             .map_err(|e| CoordinatorError::SerialOpen(e.to_string()))?;
 
         let subscription_service = self.subscription_service.clone();
-        let receive_from_serial_send_to_channel = move || -> Result<(), SerialThreadError> {
+        let mut receive_from_serial_send_to_channel = move || -> Result<(), SerialThreadError> {
             loop {
                 let mut buffer = [0u8; 256];
                 let len = read
                     .read(&mut buffer)
-                    .map_err(|_e| SerialThreadError::SerialRead)?;
+                    .map_err(|e| SerialThreadError::SerialRead(e.to_string()))?;
                 if let Some(start_of_frame_position) = buffer.iter().position(|&x| x == 0xfe) {
                     let packet: UnpiPacket<Vec<u8>> = UnpiPacket::try_from((
                         &buffer[start_of_frame_position..len],
                         LenTypeInfo::OneByte,
                     ))
-                    .map_err(|_e| SerialThreadError::PacketParse)?
+                    .map_err(|_| SerialThreadError::PacketParse)?
                     .to_owned();
                     trace!("<<< {:?}", packet);
                     let send = async { subscription_service.lock().await.notify(packet) };
@@ -83,22 +83,26 @@ impl SubscriptionSerial for SimpleSerialPort {
             .1
             .take()
             .ok_or(CoordinatorError::SerialChannelMissing)?;
-        let receive_from_channel_send_to_serial = move || -> Result<(), SerialThreadError> {
+        let mut receive_from_channel_send_to_serial = move || -> Result<(), SerialThreadError> {
             block_on(async {
                 while let Some(packet) = rx.next().await {
                     trace!(">>> {:?}", packet);
                     packet
                         .to_serial(&mut *write)
-                        .map_err(|_e| SerialThreadError::SerialWrite)?;
+                        .map_err(|e| SerialThreadError::SerialWrite(format!("{:?}", e)))?;
                 }
                 Ok::<(), SerialThreadError>(())
             })?;
             Ok(())
         };
-        self.read_thread
-            .replace(std::thread::spawn(receive_from_serial_send_to_channel));
-        self.write_thread
-            .replace(std::thread::spawn(receive_from_channel_send_to_serial));
+        self.read_thread.replace(std::thread::spawn(move || {
+            receive_from_serial_send_to_channel()
+                .inspect_err(|e| error!("receive_from_serial_send_to_channel: {:?}", e))
+        }));
+        self.write_thread.replace(std::thread::spawn(move || {
+            receive_from_channel_send_to_serial()
+                .inspect_err(|e| error!("receive_from_channel_send_to_serial: {:?}", e))
+        }));
         Ok(())
     }
 
