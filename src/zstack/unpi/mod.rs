@@ -1,11 +1,13 @@
-use crate::{coordinator::CoordinatorError, utils::slice_reader::SliceReader};
+use crate::{
+    coordinator::CoordinatorError, parameters::ParameterValue,
+    serial::simple_serial_port::ToSerial, utils::slice_reader::SliceReader,
+};
 use commands::Command;
-use parameters::ParameterValue;
-use std::{future::Future, io::Write};
+use std::{borrow::Borrow, future::Future, io::Write};
 
 pub mod commands;
 pub mod constants;
-pub mod parameters;
+pub mod serial;
 pub mod subsystems;
 
 pub const START_OF_FRAME: u8 = 0xFE;
@@ -31,6 +33,15 @@ pub struct UnpiPacket<T> {
 pub type Container = Vec<u8>;
 /// Static UNPI packet type
 pub type SUnpiPacket = UnpiPacket<Container>;
+
+impl ToSerial for SUnpiPacket {
+    fn to_serial<W: std::io::Write + ?Sized>(&self, serial: &mut W) -> Result<(), std::io::Error> {
+        let mut unpi_packet_buffer = [0u8; 256];
+        let written = self.to_bytes(&mut unpi_packet_buffer)?;
+        serial.write_all(&unpi_packet_buffer[0..written])?;
+        Ok(())
+    }
+}
 
 impl<T: AsRef<[u8]>> std::fmt::Debug for UnpiPacket<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -284,6 +295,16 @@ impl<'a> TryFrom<(&'a [u8], LenTypeInfo)> for UnpiPacket<&'a [u8]> {
         } else {
             Err(UnpiPacketError::InvalidFcs((p.fcs, checksum)))
         }
+    }
+}
+
+impl<'a> TryFrom<&'a [u8]> for UnpiPacket<Vec<u8>> {
+    type Error = UnpiPacketError;
+
+    fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
+        let r: UnpiPacket<&'a [u8]> =
+            TryFrom::<(&'a [u8], LenTypeInfo)>::try_from((value, LenTypeInfo::OneByte))?;
+        Ok(r.to_owned())
     }
 }
 

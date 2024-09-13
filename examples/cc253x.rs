@@ -1,8 +1,8 @@
 //use pasts::Executor;
 use futures::executor::block_on;
 use rusty_zigbee_dongle::{
-    cc253x::CC253X,
     coordinator::{Coordinator, CoordinatorError, LedStatus},
+    zstack::cc253x::CC253X,
 };
 use std::path::PathBuf;
 

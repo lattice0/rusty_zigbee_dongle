@@ -1,6 +1,5 @@
 use crate::{
-    unpi::{commands::Command, parameters::ParameterType, MessageType},
-    utils::map::StaticMap,
+    parameters::ParameterType, utils::map::StaticMap, zstack::unpi::{commands::Command, MessageType}
 };
 
 pub const COMMANDS_ZDO: &[Command] = &[
@@ -67,4 +66,3 @@ pub const COMMANDS_ZDO: &[Command] = &[
         response: None,
     },
 ];
-

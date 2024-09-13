@@ -1,10 +1,7 @@
-use super::{
-    parameters::{ParameterType, ParameterValue},
-    subsystems::SUBSYSTEMS,
-    MessageType, Subsystem,
-};
+use super::{subsystems::SUBSYSTEMS, MessageType, Subsystem};
 use crate::{
     coordinator::CoordinatorError,
+    parameters::{ParameterType, ParameterValue},
     utils::{map::StaticMap, slice_reader::SliceReader},
 };
 
@@ -121,21 +118,6 @@ pub fn get_command_by_id(subsystem: &Subsystem, id: u8) -> Option<&'static Comma
         .iter()
         .find(|(s, _)| s == subsystem)
         .and_then(|(_, cmds)| cmds.iter().find(|c| c.id == id))
-}
-
-#[derive(Debug)]
-pub enum ParameterError {
-    InvalidParameter,
-    Io(String),
-    NoCommandWithName,
-    Unreachable,
-    MissingListLength,
-}
-
-impl From<std::io::Error> for ParameterError {
-    fn from(e: std::io::Error) -> Self {
-        ParameterError::Io(e.to_string())
-    }
 }
 
 #[cfg(test)]

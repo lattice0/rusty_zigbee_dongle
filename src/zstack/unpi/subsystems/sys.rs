@@ -1,6 +1,5 @@
 use crate::{
-    unpi::{commands::Command, parameters::ParameterType, MessageType},
-    utils::map::StaticMap,
+    parameters::ParameterType, utils::map::StaticMap, zstack::unpi::{commands::Command, MessageType}
 };
 
 pub const COMMANDS_SYS: &[Command] = &[
@@ -41,5 +40,12 @@ pub const COMMANDS_SYS: &[Command] = &[
             ("value", ParameterType::I8),
         ])),
         response: Some(StaticMap::new(&[("value", ParameterType::U8)])),
+    },
+    Command {
+        name: "osal_nv_read",
+        id: 19,
+        command_type: MessageType::SREQ,
+        request: Some(StaticMap::new(&[("id", ParameterType::U16)])),
+        response: Some(StaticMap::new(&[("length", ParameterType::U16)])),
     },
 ];

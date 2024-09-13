@@ -1,5 +1,4 @@
-use super::commands::ParameterError;
-use crate::utils::slice_reader::SliceReader;
+use crate::{coordinator::CoordinatorError, utils::slice_reader::SliceReader};
 use std::io::Write;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -122,6 +121,27 @@ impl ParameterValue {
             }
         }
         Ok(len - output.len())
+    }
+}
+
+#[derive(Debug)]
+pub enum ParameterError {
+    InvalidParameter,
+    Io(String),
+    NoCommandWithName,
+    Unreachable,
+    MissingListLength,
+}
+
+impl From<std::io::Error> for ParameterError {
+    fn from(e: std::io::Error) -> Self {
+        ParameterError::Io(e.to_string())
+    }
+}
+
+impl From<ParameterError> for CoordinatorError {
+    fn from(e: ParameterError) -> Self {
+        CoordinatorError::Parameter(e)
     }
 }
 

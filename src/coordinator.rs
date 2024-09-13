@@ -1,6 +1,6 @@
 use crate::{
-    unpi::{commands::ParameterError, parameters::ParameterValue},
-    utils::map::{MapError, StaticMap},
+    parameters::{ParameterError, ParameterValue},
+    utils::map::{MapError, StaticMap}, zstack::{nv_memory::nv_memory::NvMemoryAdapterError, unpi::serial::UnpiCommandError},
 };
 use std::future::Future;
 
@@ -173,6 +173,8 @@ pub enum CoordinatorError {
     InvalidCommandStatus,
     InvalidResponse,
     InvalidMessageType,
+    NvMemoryAdapter(NvMemoryAdapterError),
+    UnpiCommand(UnpiCommandError)
 }
 
 impl From<std::io::Error> for CoordinatorError {
@@ -181,14 +183,21 @@ impl From<std::io::Error> for CoordinatorError {
     }
 }
 
-impl From<ParameterError> for CoordinatorError {
-    fn from(e: ParameterError) -> Self {
-        CoordinatorError::Parameter(e)
-    }
-}
 
 impl From<MapError> for CoordinatorError {
     fn from(e: MapError) -> Self {
         CoordinatorError::Map(e)
+    }
+}
+
+impl From<NvMemoryAdapterError> for CoordinatorError {
+    fn from(e: NvMemoryAdapterError) -> Self {
+        CoordinatorError::NvMemoryAdapter(e)
+    }
+}
+
+impl From<UnpiCommandError> for CoordinatorError {
+    fn from(e: UnpiCommandError) -> Self {
+        CoordinatorError::UnpiCommand(e)
     }
 }

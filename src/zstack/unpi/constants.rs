@@ -1,5 +1,5 @@
-use super::{commands::MAX_COMMAND_SIZE, parameters::ParameterValue};
-use crate::utils::map::StaticMap;
+use super::commands::MAX_COMMAND_SIZE;
+use crate::{parameters::ParameterValue, utils::map::StaticMap};
 
 pub const BEACON_MAX_DEPTH: u8 = 0x0f;
 pub const DEF_NWK_RADIUS: u8 = 2 * BEACON_MAX_DEPTH;
@@ -29,7 +29,6 @@ pub mod af {
 
     pub const DEFAULT_RADIUS: u8 = super::DEF_NWK_RADIUS;
 }
-
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum CommandStatus {
@@ -212,12 +211,10 @@ impl TryFrom<u8> for CommandStatus {
 impl TryFrom<StaticMap<MAX_COMMAND_SIZE, &'static str, ParameterValue>> for CommandStatus {
     type Error = ();
 
-    fn try_from(map: StaticMap<MAX_COMMAND_SIZE, &'static str, ParameterValue>) -> Result<Self, Self::Error> {
-        let status = map
-            .get(&"state")
-            .ok_or(())?
-            .try_into_u8()
-            .map_err(|_| ())?;
+    fn try_from(
+        map: StaticMap<MAX_COMMAND_SIZE, &'static str, ParameterValue>,
+    ) -> Result<Self, Self::Error> {
+        let status = map.get(&"state").ok_or(())?.try_into_u8().map_err(|_| ())?;
         Ok(CommandStatus::try_from(status)?)
     }
 }

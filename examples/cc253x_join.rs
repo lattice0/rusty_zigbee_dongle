@@ -1,9 +1,9 @@
 use futures::executor::block_on;
 use log::info;
 use rusty_zigbee_dongle::{
-    cc253x::CC253X,
     coordinator::{Coordinator, CoordinatorError, ZigbeeEvent},
     utils::sleep::sleep_forever,
+    zstack::cc253x::CC253X,
 };
 use std::path::PathBuf;
 

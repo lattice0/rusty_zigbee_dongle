@@ -3,34 +3,34 @@ use crate::{
         AddressMode, Coordinator, CoordinatorError, DeviceInfo, LedStatus, OnEvent, ResetType,
         ZigbeeEvent,
     },
+    parameters::ParameterValue,
     serial::{simple_serial_port::SimpleSerialPort, SubscriptionSerial},
-    subscription::{Action, Event, Predicate, Subscription, SubscriptionService},
-    unpi::{
+    subscription::{Event, Predicate, Subscription, SubscriptionService},
+    utils::{error, info, trace, warn},
+    zstack::unpi::{
         commands::{get_command_by_name, Command, ParametersValueMap},
-        constants::CommandStatus,
-        parameters::ParameterValue,
+        constants::{af, CommandStatus},
+        serial::wait_for,
         LenTypeInfo, MessageType, SUnpiPacket, Subsystem,
     },
-    utils::{error, info, trace, warn},
 };
-use futures::{
-    channel::oneshot::{self, Receiver, Sender},
-    executor::block_on,
-    lock::Mutex,
-};
+use futures::{executor::block_on, lock::Mutex};
 use std::{ops::Deref, path::PathBuf, sync::Arc};
+
+use super::nv_memory::nv_memory::NvMemoryAdapter;
 
 //TODO: fix this
 const MAXIMUM_ZIGBEE_PAYLOAD_SIZE: usize = 255;
 
-pub struct CC253X<S: SubscriptionSerial> {
+pub struct CC253X<S: SubscriptionSerial<SUnpiPacket>> {
     _supports_led: Option<bool>,
     subscriptions: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
     serial: Arc<Mutex<S>>,
     on_zigbee_event: Arc<Mutex<Option<OnEvent>>>,
+    nv_adapter: NvMemoryAdapter,
 }
 
-impl CC253X<SimpleSerialPort> {
+impl CC253X<SimpleSerialPort<SUnpiPacket>> {
     pub fn from_path(path: PathBuf, baud_rate: u32) -> Result<Self, CoordinatorError> {
         let on_zigbee_event = Arc::new(Mutex::new(Option::<OnEvent>::None));
         let mut subscription_service = SubscriptionService::new();
@@ -72,11 +72,12 @@ impl CC253X<SimpleSerialPort> {
             _supports_led: None,
             subscriptions: subscriptions.clone(),
             on_zigbee_event,
+            nv_adapter: NvMemoryAdapter::new(subscriptions)?,
         })
     }
 }
 
-impl<S: SubscriptionSerial> CC253X<S> {
+impl<S: SubscriptionSerial<SUnpiPacket>> CC253X<S> {
     pub async fn request(
         &self,
         name: &str,
@@ -93,6 +94,23 @@ impl<S: SubscriptionSerial> CC253X<S> {
         )?;
         self.serial.lock().await.write(&packet).await?;
         Ok(())
+    }
+
+    async fn wait_for(
+        &self,
+        name: &str,
+        message_type: MessageType,
+        subsystem: Subsystem,
+        timeout: Option<std::time::Duration>,
+    ) -> Result<(SUnpiPacket, Command), CoordinatorError> {
+        Ok(wait_for(
+            name,
+            message_type,
+            subsystem,
+            self.subscriptions.clone(),
+            timeout,
+        )
+        .await?)
     }
 
     pub async fn request_with_reply(
@@ -116,43 +134,6 @@ impl<S: SubscriptionSerial> CC253X<S> {
         };
         futures::try_join!(send, wait)
             .map(|(_, (packet, command))| command.read_and_fill(packet.payload.as_slice()))?
-    }
-
-    pub async fn wait_for(
-        &self,
-        name: &str,
-        message_type: MessageType,
-        subsystem: Subsystem,
-        _timeout: Option<std::time::Duration>,
-    ) -> Result<(SUnpiPacket, Command), CoordinatorError> {
-        let command = get_command_by_name(&subsystem, name)
-            .ok_or(CoordinatorError::NoCommandWithName(name.to_string()))?;
-        let subscriptions = self.subscriptions.clone();
-        let (tx, rx): (Sender<SUnpiPacket>, Receiver<SUnpiPacket>) = oneshot::channel();
-        {
-            let mut s = subscriptions.lock().await;
-            let subscription = Subscription::SingleShot(
-                Predicate(Box::new(move |packet: &SUnpiPacket| {
-                    packet.type_subsystem == (message_type, subsystem)
-                        && packet.command == command.id
-                })),
-                Action(Box::new(move |packet: &SUnpiPacket| {
-                    let _ = tx.send(packet.clone());
-                })),
-            );
-            s.subscribe(subscription);
-        }
-        let mut response_command = command.clone();
-        // We rewrite the command as being a response if it was a request
-        match response_command.command_type {
-            MessageType::AREQ => response_command.command_type = MessageType::AREQ,
-            MessageType::SREQ => response_command.command_type = MessageType::SRESP,
-            _ => return Err(CoordinatorError::InvalidMessageType),
-        }
-        Ok((
-            rx.await.map_err(|_| CoordinatorError::SubscriptionError)?,
-            response_command,
-        ))
     }
 
     pub async fn begin_startup(&self) -> Result<CommandStatus, CoordinatorError> {
@@ -183,7 +164,7 @@ impl<S: SubscriptionSerial> CC253X<S> {
     }
 }
 
-impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
+impl<S: SubscriptionSerial<SUnpiPacket>> Coordinator for CC253X<S> {
     type ZclFrame = psila_data::cluster_library::ClusterLibraryHeader;
 
     type ZclPayload<'a> = ([u8; MAXIMUM_ZIGBEE_PAYLOAD_SIZE], usize);
@@ -373,10 +354,7 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
         let parameters = &[
             ("destination_address", ParameterValue::U16(0)),
             ("options", ParameterValue::U8(0)),
-            (
-                "radius",
-                ParameterValue::U8(crate::unpi::constants::af::DEFAULT_RADIUS),
-            ),
+            ("radius", ParameterValue::U8(af::DEFAULT_RADIUS)),
         ];
 
         self.request("exit_route_disc", Subsystem::Zdo, parameters)

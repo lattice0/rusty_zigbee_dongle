@@ -2,7 +2,6 @@ use super::{SerialThreadError, SubscriptionSerial};
 use crate::{
     coordinator::CoordinatorError,
     subscription::SubscriptionService,
-    unpi::{LenTypeInfo, SUnpiPacket, UnpiPacket},
     utils::{error, trace},
 };
 use futures::StreamExt;
@@ -16,21 +15,21 @@ use std::{sync::Arc, thread::JoinHandle};
 const DEFAULT_READ_TIMEOUT_MS: u64 = 10;
 
 // Simplest possible serial port implementation
-pub struct SimpleSerialPort {
+pub struct SimpleSerialPort<P> {
     path: String,
     baud_rate: u32,
     // from the coordinator to the serial port
-    to_serial: (Option<Sender<SUnpiPacket>>, Option<Receiver<SUnpiPacket>>),
+    to_serial: (Option<Sender<P>>, Option<Receiver<P>>),
     read_thread: Option<JoinHandle<Result<(), SerialThreadError>>>,
     write_thread: Option<JoinHandle<Result<(), SerialThreadError>>>,
-    subscription_service: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
+    subscription_service: Arc<Mutex<SubscriptionService<P>>>,
 }
 
-impl SimpleSerialPort {
+impl<P> SimpleSerialPort<P> {
     pub fn new(
         path: &str,
         baud_rate: u32,
-        subscription_service: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
+        subscription_service: Arc<Mutex<SubscriptionService<P>>>,
     ) -> Result<Self, CoordinatorError> {
         let to_serial = mpsc::channel(20);
         let to_serial = (Some(to_serial.0), Some(to_serial.1));
@@ -45,9 +44,19 @@ impl SimpleSerialPort {
     }
 }
 
-impl SubscriptionSerial for SimpleSerialPort {
-    type Sender = Sender<SUnpiPacket>;
-    type Receiver = Receiver<SUnpiPacket>;
+impl<
+        P: for<'a> TryFrom<&'a [u8]>
+            + ToOwned<Owned = P>
+            + ToSerial
+            + PartialEq
+            + std::fmt::Debug
+            + Clone
+            + Send
+            + 'static,
+    > SubscriptionSerial<P> for SimpleSerialPort<P>
+{
+    type Sender = Sender<P>;
+    type Receiver = Receiver<P>;
 
     fn start(&mut self) -> Result<(), CoordinatorError> {
         let mut read = serialport::new(self.path.clone(), self.baud_rate)
@@ -70,12 +79,9 @@ impl SubscriptionSerial for SimpleSerialPort {
                     Err(e) => return Err(SerialThreadError::SerialRead(e.to_string())),
                 }?;
                 if let Some(start_of_frame_position) = buffer.iter().position(|&x| x == 0xfe) {
-                    let packet: UnpiPacket<Vec<u8>> = UnpiPacket::try_from((
-                        &buffer[start_of_frame_position..len],
-                        LenTypeInfo::OneByte,
-                    ))
-                    .map_err(|_| SerialThreadError::PacketParse)?
-                    .to_owned();
+                    let packet: P = P::try_from(&buffer[start_of_frame_position..len])
+                        .map_err(|_| SerialThreadError::PacketParse)?
+                        .to_owned();
                     trace!("<<< {:?}", packet);
                     let send = async { subscription_service.lock().await.notify(packet) };
                     block_on(send).map_err(|_| SerialThreadError::SubscriptionWrite)?;
@@ -110,7 +116,7 @@ impl SubscriptionSerial for SimpleSerialPort {
         Ok(())
     }
 
-    async fn write(&mut self, packet: &UnpiPacket<Vec<u8>>) -> Result<(), CoordinatorError> {
+    async fn write(&mut self, packet: &P) -> Result<(), CoordinatorError> {
         let tx = self
             .to_serial
             .0
@@ -120,4 +126,8 @@ impl SubscriptionSerial for SimpleSerialPort {
             .await
             .map_err(|_e| CoordinatorError::SerialWrite)
     }
+}
+
+pub trait ToSerial {
+    fn to_serial<W: std::io::Write + ?Sized>(&self, writer: &mut W) -> Result<(), std::io::Error>;
 }
