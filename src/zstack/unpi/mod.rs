@@ -3,7 +3,7 @@ use crate::{
     serial::simple_serial_port::ToSerial, utils::slice_reader::SliceReader,
 };
 use commands::Command;
-use std::{borrow::Borrow, future::Future, io::Write};
+use std::{future::Future, io::Write};
 
 pub mod commands;
 pub mod constants;

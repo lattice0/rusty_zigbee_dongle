@@ -27,7 +27,7 @@ pub struct CC253X<S: SubscriptionSerial<SUnpiPacket>> {
     subscriptions: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
     serial: Arc<Mutex<S>>,
     on_zigbee_event: Arc<Mutex<Option<OnEvent>>>,
-    nv_adapter: NvMemoryAdapter,
+    _nv_adapter: NvMemoryAdapter,
 }
 
 impl CC253X<SimpleSerialPort<SUnpiPacket>> {
@@ -72,7 +72,7 @@ impl CC253X<SimpleSerialPort<SUnpiPacket>> {
             _supports_led: None,
             subscriptions: subscriptions.clone(),
             on_zigbee_event,
-            nv_adapter: NvMemoryAdapter::new(subscriptions)?,
+            _nv_adapter: NvMemoryAdapter::new(subscriptions)?,
         })
     }
 }
