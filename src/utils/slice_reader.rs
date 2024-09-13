@@ -35,6 +35,31 @@ impl<'a> SliceReader<'a> {
         Ok(u32::from_le_bytes(buffer))
     }
 
+    pub fn read_u8_array<const N: usize>(&mut self, len: usize) -> Result<[u8; N], std::io::Error> {
+        let mut buffer = [0u8; N];
+        self.0.read_exact(&mut buffer)?;
+        Ok(buffer)
+    }
+
+    pub fn read_u16_array<const N: usize>(
+        &mut self,
+        len: usize,
+    ) -> Result<[u16; N], std::io::Error> {
+        let mut buffer = [0u16; N];
+        buffer.iter_mut().take(len).try_for_each(|x| {
+            *x = self.read_u16_le()?;
+            Ok::<(), std::io::Error>(())
+        })?;
+        Ok(buffer)
+    }
+
+    pub fn read_array_le<const N: usize>(&mut self, len: usize) -> Result<[u8; N], std::io::Error> {
+        let mut buffer = [0u8; N];
+        self.0.read_exact(&mut buffer)?;
+        buffer.reverse();
+        Ok(buffer)
+    }
+
     pub fn read_exact(&mut self, output: &mut [u8]) -> Result<(), std::io::Error> {
         self.0.read_exact(output)
     }
@@ -46,5 +71,55 @@ impl<'a> SliceReader<'a> {
         ))?;
         self.0 = right;
         Ok(left)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_read_u8() {
+        let data = [0x01, 0x02, 0x03];
+        let mut reader = SliceReader(&data);
+        assert_eq!(reader.read_u8().unwrap(), 0x01);
+        assert_eq!(reader.read_u8().unwrap(), 0x02);
+        assert_eq!(reader.read_u8().unwrap(), 0x03);
+    }
+
+    #[test]
+    fn test_read_u16_le() {
+        let data = [0x01, 0x02, 0x03, 0x04];
+        let mut reader = SliceReader(&data);
+        assert_eq!(reader.read_u16_le().unwrap(), 0x0201);
+        assert_eq!(reader.read_u16_le().unwrap(), 0x0403);
+    }
+
+    #[test]
+    fn test_read_u32_le() {
+        let data = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
+        let mut reader = SliceReader(&data);
+        assert_eq!(reader.read_u32_le().unwrap(), 0x04030201);
+        assert_eq!(reader.read_u32_le().unwrap(), 0x08070605);
+    }
+
+    #[test]
+    fn test_read_array() {
+        let data = [0x01, 0x02, 0x03, 0x04];
+        let mut reader = SliceReader(&data);
+        assert_eq!(
+            reader.read_u8_array::<4>(4).unwrap(),
+            [0x01, 0x02, 0x03, 0x04]
+        );
+    }
+
+    #[test]
+    fn test_read_array_le() {
+        let data = [0x01, 0x02, 0x03, 0x04];
+        let mut reader = SliceReader(&data);
+        assert_eq!(
+            reader.read_array_le::<4>(4).unwrap(),
+            [0x04, 0x03, 0x02, 0x01]
+        );
     }
 }

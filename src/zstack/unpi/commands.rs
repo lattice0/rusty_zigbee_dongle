@@ -1,15 +1,15 @@
 use super::{subsystems::SUBSYSTEMS, MessageType, Subsystem};
 use crate::{
     coordinator::CoordinatorError,
+    parameters::{ParameterType, ParameterValue},
     utils::{map::StaticMap, slice_reader::SliceReader},
 };
-use std::io::Write;
 
 pub const MAX_COMMAND_SIZE: usize = 15;
 pub type ParametersValueMap = StaticMap<MAX_COMMAND_SIZE, &'static str, ParameterValue>;
 pub type ParametersTypeMap = StaticMap<MAX_COMMAND_SIZE, &'static str, ParameterType>;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 /// Represents a command in the UNPI protocol.
 pub struct Command {
     pub name: &'static str,
@@ -33,17 +33,16 @@ impl Command {
                 // Find parameter in request
                 let parameter_type = request
                     .get(name)
-                    .ok_or(CoordinatorError::NoCommandWithName)?;
+                    .ok_or(CoordinatorError::NoCommandWithName(name.to_string()))?;
                 if request.contains_key(name) {
                     // Only writes if we match the parameter type
                     let written = value.match_and_write(parameter_type, output)?;
                     let new_output = std::mem::take(&mut output);
                     output = &mut new_output[written..];
                 } else {
-                    return Err(CoordinatorError::NoCommandWithName);
+                    return Err(CoordinatorError::NoCommandWithName(name.to_string()));
                 }
 
-                //log!("COMMAND: {}, VALUE {:?}", name, value);
                 Ok::<(), CoordinatorError>(())
             })?;
         }
@@ -52,82 +51,60 @@ impl Command {
 
     pub fn read_and_fill(&self, input: &[u8]) -> Result<ParametersValueMap, CoordinatorError> {
         let mut reader = SliceReader(input);
-        let response = self
-            .response
-            .as_ref()
-            .ok_or(CoordinatorError::ResponseMismatch)?;
-        let mut parameters: ParametersValueMap = Default::default();
-        response.iter().try_for_each(|(name, parameter_type)| {
-            let value = parameter_type.from_slice_reader(&mut reader)?;
-            parameters.insert(name, value)?;
-            Ok::<(), CoordinatorError>(())
-        })?;
+        let parameters = match self.name {
+            // Special case for get_device_info, where num_assoc_devices specifies the list length before it comes
+            "get_device_info" => {
+                let mut parameters: ParametersValueMap = Default::default();
+                let status = reader.read_u8()?;
+                let ieee_addr = reader.read_u8_array(8)?;
+                let short_addr = reader.read_u16_le()?;
+                let device_type = reader.read_u8()?;
+                let device_state = reader.read_u8()?;
+                let num_assoc_devices = reader.read_u8()?;
+                let assoc_devices_list = reader.read_u16_array(num_assoc_devices as usize)?;
+                parameters.insert("status", ParameterValue::U8(status))?;
+                parameters.insert("ieee_addr", ParameterValue::IeeAddress(ieee_addr))?;
+                parameters.insert("short_addr", ParameterValue::U16(short_addr))?;
+                parameters.insert("device_type", ParameterValue::U8(device_type))?;
+                parameters.insert("device_state", ParameterValue::U8(device_state))?;
+                parameters.insert("num_assoc_devices", ParameterValue::U8(num_assoc_devices))?;
+                parameters.insert(
+                    "assoc_devices_list",
+                    ParameterValue::ListU16(assoc_devices_list),
+                )?;
+                parameters
+            }
+            _ => {
+                //Asynchronous request
+                if let (Some(request), MessageType::AREQ) = (self.request, self.command_type) {
+                    let mut parameters: ParametersValueMap = Default::default();
+                    request.iter().try_for_each(|(name, parameter_type)| {
+                        let value = parameter_type.from_slice_reader(&mut reader)?;
+                        parameters.insert(name, value)?;
+                        Ok::<(), CoordinatorError>(())
+                    })?;
+                    parameters
+                } else if let (Some(response), MessageType::SRESP) =
+                    (self.response, self.command_type)
+                {
+                    let mut parameters: ParametersValueMap = Default::default();
+                    response.iter().try_for_each(|(name, parameter_type)| {
+                        let value = parameter_type.from_slice_reader(&mut reader)?;
+                        parameters.insert(name, value)?;
+                        Ok::<(), CoordinatorError>(())
+                    })?;
+                    parameters
+                } else {
+                    println!("invalid response, command: {:?}", self);
+                    return Err(CoordinatorError::InvalidResponse);
+                }
+            }
+        };
         Ok(parameters)
     }
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub enum ParameterType {
-    U8,
-    U16,
-    U32,
-    I8,
-}
-
-impl ParameterType {
-    pub fn from_slice_reader(
-        &self,
-        reader: &mut SliceReader,
-    ) -> Result<ParameterValue, CoordinatorError> {
-        Ok(match self {
-            ParameterType::U8 => ParameterValue::U8(reader.read_u8()?),
-            ParameterType::U16 => ParameterValue::U16(reader.read_u16_le()?),
-            ParameterType::U32 => ParameterValue::U32(reader.read_u32_le()?),
-            ParameterType::I8 => ParameterValue::I8(reader.read_i8()?),
-        })
-    }
-}
-
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub enum ParameterValue {
-    U8(u8),
-    U16(u16),
-    U32(u32),
-    I8(i8),
-}
-
-impl PartialEq<ParameterType> for ParameterValue {
-    fn eq(&self, other: &ParameterType) -> bool {
-        match self {
-            ParameterValue::U8(_) => other == &ParameterType::U8,
-            ParameterValue::U16(_) => other == &ParameterType::U16,
-            ParameterValue::U32(_) => other == &ParameterType::U32,
-            ParameterValue::I8(_) => other == &ParameterType::I8,
-        }
-    }
-}
-
-impl ParameterValue {
-    pub fn match_and_write(
-        &self,
-        parameter_type: &ParameterType,
-        mut output: &mut [u8],
-    ) -> Result<usize, ParameterError> {
-        let len = output.len();
-        if self != parameter_type {
-            return Err(ParameterError::InvalidParameter);
-        }
-        match self {
-            ParameterValue::U8(v) => output.write_all(&[*v])?,
-            ParameterValue::U16(v) => output.write_all(&v.to_le_bytes())?,
-            ParameterValue::U32(v) => output.write_all(&v.to_le_bytes())?,
-            //TODO: i8 to u8?
-            ParameterValue::I8(v) => output.write_all(&[*v as u8])?,
-        }
-        Ok(len - output.len())
-    }
-}
-
+/// Get a command by name, linear (kinda slow) search over the static slice
 pub fn get_command_by_name(subsystem: &Subsystem, name: &str) -> Option<&'static Command> {
     SUBSYSTEMS
         .iter()
@@ -135,24 +112,12 @@ pub fn get_command_by_name(subsystem: &Subsystem, name: &str) -> Option<&'static
         .and_then(|(_, cmds)| cmds.iter().find(|c| c.name == name))
 }
 
+/// Get a command by name, linear (kinda slow) search over the static slice
 pub fn get_command_by_id(subsystem: &Subsystem, id: u8) -> Option<&'static Command> {
     SUBSYSTEMS
         .iter()
         .find(|(s, _)| s == subsystem)
         .and_then(|(_, cmds)| cmds.iter().find(|c| c.id == id))
-}
-
-#[derive(Debug)]
-pub enum ParameterError {
-    InvalidParameter,
-    Io(String),
-    NoCommandWithName,
-}
-
-impl From<std::io::Error> for ParameterError {
-    fn from(e: std::io::Error) -> Self {
-        ParameterError::Io(e.to_string())
-    }
 }
 
 #[cfg(test)]

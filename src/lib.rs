@@ -1,10 +1,9 @@
-#[cfg(feature = "cc2531x")]
-pub mod cc253x;
 pub mod coordinator;
 pub mod serial;
 pub mod subscription;
-pub mod unpi;
 pub mod utils;
+pub mod parameters;
+pub mod zstack;
 
 #[cfg(test)]
 mod tests {

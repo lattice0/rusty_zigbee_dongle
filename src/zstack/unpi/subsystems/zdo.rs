@@ -1,9 +1,5 @@
 use crate::{
-    unpi::{
-        commands::{Command, ParameterType},
-        MessageType,
-    },
-    utils::map::StaticMap,
+    parameters::ParameterType, utils::map::StaticMap, zstack::unpi::{commands::Command, MessageType}
 };
 
 pub const COMMANDS_ZDO: &[Command] = &[
@@ -34,6 +30,13 @@ pub const COMMANDS_ZDO: &[Command] = &[
         response: Some(StaticMap::new(&[("status", ParameterType::U8)])),
     },
     Command {
+        name: "startup_from_app",
+        id: 64,
+        command_type: MessageType::SREQ,
+        request: Some(StaticMap::new(&[("start_delay", ParameterType::U16)])),
+        response: Some(StaticMap::new(&[("status", ParameterType::U8)])),
+    },
+    Command {
         name: "exit_route_disc",
         id: 69, // TODO: 0x0038 => 56?? (from zStackAdapter.ts)
         command_type: MessageType::SREQ,
@@ -43,5 +46,23 @@ pub const COMMANDS_ZDO: &[Command] = &[
             ("radius", ParameterType::U8),
         ])),
         response: Some(StaticMap::new(&[("status", ParameterType::U8)])),
+    },
+    Command {
+        name: "state_changed_ind",
+        id: 192,
+        command_type: MessageType::AREQ,
+        request: Some(StaticMap::new(&[("state", ParameterType::U8)])),
+        response: None,
+    },
+    Command {
+        name: "tc_device_index",
+        id: 202,
+        command_type: MessageType::AREQ,
+        request: Some(StaticMap::new(&[
+            ("network_address", ParameterType::U16),
+            ("extended_address", ParameterType::IeeeAddress),
+            ("parent_address", ParameterType::U16),
+        ])),
+        response: None,
     },
 ];

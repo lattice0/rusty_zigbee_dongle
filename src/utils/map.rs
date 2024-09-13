@@ -1,6 +1,6 @@
 /// Map that owns the data and has a fixed size. Data is simply options of tuples, the simplest possible
 /// representation of a map.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub struct StaticMap<const N: usize, K, V>(pub [Option<(K, V)>; N]);
 
 impl<const N: usize, K: Copy + 'static, V: Copy + 'static> Default for StaticMap<N, K, V> {

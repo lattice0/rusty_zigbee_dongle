@@ -1,32 +1,64 @@
 use crate::{
-    coordinator::{AddressMode, Coordinator, CoordinatorError, LedStatus, ResetType},
+    coordinator::{
+        AddressMode, Coordinator, CoordinatorError, DeviceInfo, LedStatus, OnEvent, ResetType,
+        ZigbeeEvent,
+    },
+    parameters::ParameterValue,
     serial::{simple_serial_port::SimpleSerialPort, SubscriptionSerial},
-    subscription::{Predicate, Subscription, SubscriptionService},
-    unpi::{
-        commands::{get_command_by_name, ParameterValue, ParametersValueMap},
+    subscription::{Event, Predicate, Subscription, SubscriptionService},
+    utils::{error, info, trace, warn},
+    zstack::unpi::{
+        commands::{get_command_by_name, Command, ParametersValueMap},
+        constants::{af, CommandStatus},
+        serial::wait_for,
         LenTypeInfo, MessageType, SUnpiPacket, Subsystem,
     },
-    utils::warnn,
 };
-use futures::{
-    channel::oneshot::{self, Receiver, Sender},
-    lock::Mutex,
-};
-use std::{path::PathBuf, sync::Arc};
+use futures::{executor::block_on, lock::Mutex};
+use std::{ops::Deref, path::PathBuf, sync::Arc};
+
+use super::nv_memory::nv_memory::NvMemoryAdapter;
 
 //TODO: fix this
 const MAXIMUM_ZIGBEE_PAYLOAD_SIZE: usize = 255;
 
-pub struct CC253X<S: SubscriptionSerial> {
+pub struct CC253X<S: SubscriptionSerial<SUnpiPacket>> {
     _supports_led: Option<bool>,
     subscriptions: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
     serial: Arc<Mutex<S>>,
-    on_zcl_frame_callback: Option<Box<dyn Fn() -> Result<(), CoordinatorError>>>,
+    on_zigbee_event: Arc<Mutex<Option<OnEvent>>>,
+    _nv_adapter: NvMemoryAdapter,
 }
 
-impl CC253X<SimpleSerialPort> {
+impl CC253X<SimpleSerialPort<SUnpiPacket>> {
     pub fn from_path(path: PathBuf, baud_rate: u32) -> Result<Self, CoordinatorError> {
-        let subscriptions = Arc::new(Mutex::new(SubscriptionService::new()));
+        let on_zigbee_event = Arc::new(Mutex::new(Option::<OnEvent>::None));
+        let mut subscription_service = SubscriptionService::new();
+
+        let device_announce_command = get_command_by_name(&Subsystem::Zdo, "tc_device_index")
+            .ok_or(CoordinatorError::NoCommandWithName(
+                "tc_device_index".to_string(),
+            ))?;
+        let _on_zigbee_event = on_zigbee_event.clone();
+        subscription_service.subscribe(Subscription::Event(
+            Predicate(Box::new(|packet: &SUnpiPacket| {
+                packet.type_subsystem == (MessageType::AREQ, Subsystem::Zdo)
+                    && packet.command == device_announce_command.id
+            })),
+            Event(Box::new(move |packet: &SUnpiPacket| {
+                let a = async {
+                    if let Some(on_zigbee_event) = _on_zigbee_event.lock().await.deref() {
+                        (on_zigbee_event)(ZigbeeEvent::DeviceAnnounce {
+                            network_address: packet.payload[0] as u16,
+                            ieee_address: packet.payload[1..9].try_into().unwrap(),
+                        })
+                        .unwrap();
+                    }
+                };
+                block_on(a);
+            })),
+        ));
+        let subscriptions = Arc::new(Mutex::new(subscription_service));
 
         let mut serial = SimpleSerialPort::new(
             path.to_str()
@@ -39,20 +71,21 @@ impl CC253X<SimpleSerialPort> {
             serial: Arc::new(Mutex::new(serial)),
             _supports_led: None,
             subscriptions: subscriptions.clone(),
-            on_zcl_frame_callback: None,
+            on_zigbee_event,
+            _nv_adapter: NvMemoryAdapter::new(subscriptions)?,
         })
     }
 }
 
-impl<S: SubscriptionSerial> CC253X<S> {
+impl<S: SubscriptionSerial<SUnpiPacket>> CC253X<S> {
     pub async fn request(
         &self,
         name: &str,
         subsystem: Subsystem,
         parameters: &[(&'static str, ParameterValue)],
     ) -> Result<(), CoordinatorError> {
-        let command =
-            get_command_by_name(&subsystem, name).ok_or(CoordinatorError::NoCommandWithName)?;
+        let command = get_command_by_name(&subsystem, name)
+            .ok_or(CoordinatorError::NoCommandWithName(name.to_string()))?;
         let packet = SUnpiPacket::from_command_owned(
             LenTypeInfo::OneByte,
             (command.command_type, subsystem),
@@ -63,59 +96,75 @@ impl<S: SubscriptionSerial> CC253X<S> {
         Ok(())
     }
 
+    async fn wait_for(
+        &self,
+        name: &str,
+        message_type: MessageType,
+        subsystem: Subsystem,
+        timeout: Option<std::time::Duration>,
+    ) -> Result<(SUnpiPacket, Command), CoordinatorError> {
+        Ok(wait_for(
+            name,
+            message_type,
+            subsystem,
+            self.subscriptions.clone(),
+            timeout,
+        )
+        .await?)
+    }
+
     pub async fn request_with_reply(
         &self,
         name: &str,
         subsystem: Subsystem,
         parameters: &[(&'static str, ParameterValue)],
     ) -> Result<ParametersValueMap, CoordinatorError> {
-        let command =
-            get_command_by_name(&subsystem, name).ok_or(CoordinatorError::NoCommandWithName)?;
+        let command = get_command_by_name(&subsystem, name)
+            .ok_or(CoordinatorError::NoCommandWithName(name.to_string()))?;
         let packet = SUnpiPacket::from_command_owned(
             LenTypeInfo::OneByte,
             (command.command_type, subsystem),
             parameters,
             command,
         )?;
-        let wait = self.wait_for("version", MessageType::SRESP, Subsystem::Sys, None);
+        let wait = self.wait_for(name, MessageType::SRESP, subsystem, None);
         let send = async {
             let mut lock = self.serial.lock().await;
             lock.write(&packet).await
         };
         futures::try_join!(send, wait)
-            .map(|(_, packet)| command.read_and_fill(packet.payload.as_slice()))?
+            .map(|(_, (packet, command))| command.read_and_fill(packet.payload.as_slice()))?
+    }
+
+    pub async fn begin_startup(&self) -> Result<CommandStatus, CoordinatorError> {
+        info!("beginning startup...");
+        let command_name = "state_changed_ind";
+        let command = get_command_by_name(&Subsystem::Zdo, command_name).ok_or(
+            CoordinatorError::NoCommandWithName(command_name.to_string()),
+        )?;
+        let wait = self.wait_for(&command.name, MessageType::AREQ, Subsystem::Zdo, None);
+        let send = self.request(
+            "startup_from_app",
+            Subsystem::Zdo,
+            &[("start_delay", ParameterValue::U16(100))],
+        );
+        let r = futures::try_join!(send, wait).map(|(_, (packet, command))| {
+            info!("reading filling command: {:?}", command);
+            command.read_and_fill(packet.payload.as_slice())
+        })??;
+        let c = TryInto::<CommandStatus>::try_into(r);
+        let r = match c {
+            Ok(c) => c,
+            Err(_) => {
+                error!("error converting to CommandStatus: {:?}", r);
+                return Err(CoordinatorError::InvalidCommandStatus);
+            }
+        };
+        Ok(r)
     }
 }
 
-impl<S: SubscriptionSerial> CC253X<S> {
-    pub async fn wait_for(
-        &self,
-        name: &str,
-        message_type: MessageType,
-        subsystem: Subsystem,
-        _timeout: Option<std::time::Duration>,
-    ) -> Result<SUnpiPacket, CoordinatorError> {
-        let command =
-            get_command_by_name(&subsystem, name).ok_or(CoordinatorError::NoCommandWithName)?;
-        let subscriptions = self.subscriptions.clone();
-        let (tx, rx): (Sender<SUnpiPacket>, Receiver<SUnpiPacket>) = oneshot::channel();
-        {
-            let mut s = subscriptions.lock().await;
-            let subscription = Subscription::SingleShot(
-                Predicate(Box::new(move |packet: &SUnpiPacket| {
-                    packet.type_subsystem == (message_type, subsystem)
-                        && packet.command == command.id
-                })),
-                tx,
-            );
-            s.subscribe(subscription);
-        }
-
-        rx.await.map_err(|_| CoordinatorError::SubscriptionError)
-    }
-}
-
-impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
+impl<S: SubscriptionSerial<SUnpiPacket>> Coordinator for CC253X<S> {
     type ZclFrame = psila_data::cluster_library::ClusterLibraryHeader;
 
     type ZclPayload<'a> = ([u8; MAXIMUM_ZIGBEE_PAYLOAD_SIZE], usize);
@@ -123,15 +172,32 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
     type IeeAddress = ieee802154::mac::Address;
 
     async fn start(&self) -> Result<(), CoordinatorError> {
-        todo!()
+        for attempt in 0..3 {
+            trace!("pinging coordinator attempt number {:?}", attempt);
+            let ping = self.request_with_reply("ping", Subsystem::Sys, &[]).await?;
+            if ping.get(&"capabilities").is_some() {
+                trace!("ping successful");
+                let version = self.version().await?;
+                if let Some(version) = version {
+                    info!("coordinator version: {:?}", version);
+                    return Ok(());
+                } else {
+                    error!("no version found");
+                    Err(CoordinatorError::CoordinatorOpen)?;
+                }
+            } else {
+                error!("ping failed");
+            }
+        }
+        Err(CoordinatorError::CoordinatorOpen)
     }
 
     async fn stop(&self) -> Result<(), CoordinatorError> {
-        todo!()
+        Ok(())
     }
 
     async fn is_inter_pan_mode(&self) -> bool {
-        warnn!("is_inter_pan_mode not implemented, assuming false");
+        warn!("is_inter_pan_mode not implemented, assuming false");
         false
     }
 
@@ -143,6 +209,7 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
     }
 
     async fn reset(&self, reset_type: ResetType) -> Result<(), CoordinatorError> {
+        trace!("reset with reset type {:?}", reset_type);
         let parameters = match reset_type {
             ResetType::Soft => &[("type", ParameterValue::U8(1))],
             ResetType::Hard => &[("type", ParameterValue::U8(0))],
@@ -153,6 +220,7 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
     }
 
     async fn set_led(&self, led_status: LedStatus) -> Result<(), CoordinatorError> {
+        trace!("setting LED to {:?}", led_status);
         //TODO: const firmwareControlsLed = parseInt(this.version.revision) >= 20211029;
         let firmware_controls_led = true;
 
@@ -185,6 +253,7 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
     }
 
     async fn change_channel(&self, channel: u8) -> Result<(), CoordinatorError> {
+        info!("changing channel to {}", channel);
         let parameters = &[
             ("destination_address", ParameterValue::U16(0xffff)),
             (
@@ -214,6 +283,7 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
     }
 
     async fn set_transmit_power(&self, power: i8) -> Result<(), CoordinatorError> {
+        info!("setting transmit power to {}", power);
         let parameters = &[
             ("operation", ParameterValue::U8(0)),
             ("value", ParameterValue::I8(power)),
@@ -245,9 +315,8 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
         seconds: std::time::Duration,
         network_address: Option<u16>,
     ) -> Result<(), CoordinatorError> {
-        if self.is_inter_pan_mode().await {
-            return Err(CoordinatorError::InterpanMode);
-        }
+        info!("permitting join for {} seconds", seconds.as_secs());
+        self.error_if_interpan_mode().await?;
         let address_mode =
             network_address.map_or(AddressMode::AddrBroadcast, |_| AddressMode::Addr16bit);
         let destination_address = network_address.unwrap_or(0xfffc);
@@ -274,27 +343,38 @@ impl<S: SubscriptionSerial> Coordinator for CC253X<S> {
 
     async fn discover_route(
         &self,
-        _address: Option<u16>,
-        _wait: Option<bool>,
+        address: Option<u16>,
+        wait: Option<bool>,
     ) -> Result<(), CoordinatorError> {
+        trace!(
+            "discovering route at address: {:?}, wait: {:?}",
+            address,
+            wait
+        );
         let parameters = &[
             ("destination_address", ParameterValue::U16(0)),
             ("options", ParameterValue::U8(0)),
-            (
-                "radius",
-                ParameterValue::U8(crate::unpi::constants::af::DEFAULT_RADIUS),
-            ),
+            ("radius", ParameterValue::U8(af::DEFAULT_RADIUS)),
         ];
 
         self.request("exit_route_disc", Subsystem::Zdo, parameters)
             .await
     }
 
-    async fn set_on_zcl_frame_callback(
-        &mut self,
-        on_zcl_frame: Box<dyn Fn() -> Result<(), CoordinatorError>>,
-    ) -> Result<(), CoordinatorError> {
-        self.on_zcl_frame_callback = Some(on_zcl_frame);
+    async fn set_on_event(&mut self, on_zigbee_event: OnEvent) -> Result<(), CoordinatorError> {
+        self.on_zigbee_event
+            .lock()
+            .await
+            .replace(Box::new(on_zigbee_event));
         Ok(())
+    }
+
+    async fn device_info(&self) -> Result<DeviceInfo, CoordinatorError> {
+        info!("getting device info...");
+        let device_info: DeviceInfo = self
+            .request_with_reply("get_device_info", Subsystem::Util, &[])
+            .await?
+            .try_into()?;
+        Ok(device_info)
     }
 }
