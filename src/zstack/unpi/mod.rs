@@ -1,6 +1,6 @@
 use crate::{
-    coordinator::CoordinatorError, parameters::ParameterValue,
-    serial::simple_serial_port::ToSerial, utils::slice_reader::SliceReader,
+    parameters::ParameterValue, serial::simple_serial_port::ToSerial,
+    utils::slice_reader::SliceReader,
 };
 use commands::Command;
 use serial::UnpiCommandError;

@@ -54,7 +54,7 @@ impl<S: SimpleSerial<SUnpiPacket>> NvMemoryAdapter<S> {
         Ok(())
     }
 
-    pub async fn read_item(&self, id: u16) -> Result<Vec<u8>, NvMemoryAdapterError> {
+    pub async fn read_item(&self, _id: u16) -> Result<Vec<u8>, NvMemoryAdapterError> {
         todo!()
     }
 }
