@@ -1,6 +1,5 @@
 use super::{serial::UnpiCommandError, subsystems::SUBSYSTEMS, MessageType, Subsystem};
 use crate::{
-    coordinator::CoordinatorError,
     parameters::{ParameterType, ParameterValue},
     utils::{map::StaticMap, slice_reader::SliceReader},
 };
@@ -49,7 +48,7 @@ impl Command {
         Ok(len - output.len())
     }
 
-    pub fn read_and_fill(&self, input: &[u8]) -> Result<ParametersValueMap, CoordinatorError> {
+    pub fn read_and_fill(&self, input: &[u8]) -> Result<ParametersValueMap, UnpiCommandError> {
         let mut reader = SliceReader(input);
         let parameters = match self.name {
             // Special case for get_device_info, where num_assoc_devices specifies the list length before it comes
@@ -81,7 +80,7 @@ impl Command {
                     request.iter().try_for_each(|(name, parameter_type)| {
                         let value = parameter_type.from_slice_reader(&mut reader)?;
                         parameters.insert(name, value)?;
-                        Ok::<(), CoordinatorError>(())
+                        Ok::<(), UnpiCommandError>(())
                     })?;
                     parameters
                 } else if let (Some(response), MessageType::SRESP) =
@@ -91,12 +90,12 @@ impl Command {
                     response.iter().try_for_each(|(name, parameter_type)| {
                         let value = parameter_type.from_slice_reader(&mut reader)?;
                         parameters.insert(name, value)?;
-                        Ok::<(), CoordinatorError>(())
+                        Ok::<(), UnpiCommandError>(())
                     })?;
                     parameters
                 } else {
                     println!("invalid response, command: {:?}", self);
-                    return Err(CoordinatorError::InvalidResponse);
+                    return Err(UnpiCommandError::InvalidResponse);
                 }
             }
         };

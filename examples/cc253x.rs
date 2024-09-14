@@ -4,7 +4,6 @@ use rusty_zigbee_dongle::{
     coordinator::{Coordinator, CoordinatorError, LedStatus},
     zstack::cc253x::CC253X,
 };
-use std::path::PathBuf;
 
 fn main() {
     #[cfg(feature = "log")]

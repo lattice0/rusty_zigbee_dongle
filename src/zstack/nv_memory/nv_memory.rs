@@ -49,12 +49,36 @@ impl<S: SimpleSerial<SUnpiPacket>> NvMemoryAdapter<S> {
         name: &str,
         subsystem: Subsystem,
         parameters: &[(&'static str, ParameterValue)],
+        _timeout: Option<std::time::Duration>,
     ) -> Result<(), NvMemoryAdapterError> {
-        request(name, subsystem, parameters, &mut *self.serial.lock().await).await?;
+        request(name, subsystem, parameters, self.serial.clone()).await?;
+        Ok(())
+    }
+
+    async fn request_with_reply(
+        &self,
+        name: &str,
+        message_type: MessageType,
+        subsystem: Subsystem,
+        parameters: &[(&'static str, ParameterValue)],
+        timeout: Option<std::time::Duration>,
+    ) -> Result<(), NvMemoryAdapterError> {
+        self.wait_for(name, message_type, subsystem, timeout)
+            .await?;
+        request(name, subsystem, parameters, self.serial.clone()).await?;
         Ok(())
     }
 
     pub async fn read_item(&self, _id: u16) -> Result<Vec<u8>, NvMemoryAdapterError> {
+        let _l = self
+            .request_with_reply(
+                "osal_nv_length",
+                MessageType::SREQ,
+                Subsystem::Sys,
+                &[("id", ParameterValue::U16(100))],
+                None,
+            )
+            .await;
         todo!()
     }
 }

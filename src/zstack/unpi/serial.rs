@@ -1,5 +1,5 @@
 use super::{
-    commands::{get_command_by_name, Command},
+    commands::{get_command_by_name, Command, ParametersValueMap},
     MessageType, SUnpiPacket, Subsystem, UnpiPacket,
 };
 use crate::{
@@ -7,6 +7,7 @@ use crate::{
     parameters::ParameterValue,
     serial::SimpleSerial,
     subscription::{Action, Predicate, Subscription, SubscriptionService},
+    utils::map::MapError,
     zstack::unpi::{LenTypeInfo, MAX_PAYLOAD_SIZE},
 };
 use crate::{parameters::ParameterError, serial::SerialThreadError, utils::info};
@@ -22,7 +23,7 @@ pub async fn request<S: SimpleSerial<SUnpiPacket>>(
     name: &str,
     subsystem: Subsystem,
     parameters: &[(&'static str, ParameterValue)],
-    serial: &mut S,
+    serial: Arc<Mutex<S>>,
 ) -> Result<(), UnpiCommandError> {
     let command = get_command_by_name(&subsystem, name)
         .ok_or(UnpiCommandError::NoCommandWithName(name.to_string()))?;
@@ -32,8 +33,41 @@ pub async fn request<S: SimpleSerial<SUnpiPacket>>(
         parameters,
         command,
     )?;
-    serial.write(&packet).await?;
+    serial.lock().await.write(&packet).await?;
     Ok(())
+}
+
+pub async fn request_with_reply<S: SimpleSerial<SUnpiPacket>>(
+    name: &str,
+    subsystem: Subsystem,
+    parameters: &[(&'static str, ParameterValue)],
+    serial: Arc<Mutex<S>>,
+    subscriptions: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
+    timeout: Option<std::time::Duration>,
+) -> Result<ParametersValueMap, UnpiCommandError> {
+    let command = get_command_by_name(&subsystem, name)
+        .ok_or(UnpiCommandError::NoCommandWithName(name.to_string()))?;
+    let packet = SUnpiPacket::from_command_owned(
+        LenTypeInfo::OneByte,
+        (command.command_type, subsystem),
+        parameters,
+        command,
+    )?;
+    let wait = wait_for(
+        name,
+        MessageType::SRESP,
+        subsystem,
+        subscriptions.clone(),
+        timeout,
+    );
+    let send = async {
+        let mut s = serial.lock().await;
+        s.write(&packet)
+            .await
+            .map_err(|e| UnpiCommandError::Serial(e))
+    };
+    futures::try_join!(send, wait)
+        .map(|(_, (packet, command))| command.read_and_fill(packet.payload.as_slice()))?
 }
 
 // reusable wait_for function
@@ -130,6 +164,8 @@ pub enum UnpiCommandError {
     Parameter(ParameterError),
     Serial(SerialThreadError),
     Io(std::io::Error),
+    Map(MapError),
+    InvalidResponse,
 }
 
 impl From<ParameterError> for UnpiCommandError {
@@ -147,5 +183,11 @@ impl From<std::io::Error> for UnpiCommandError {
 impl From<SerialThreadError> for UnpiCommandError {
     fn from(e: SerialThreadError) -> Self {
         UnpiCommandError::Serial(e)
+    }
+}
+
+impl From<MapError> for UnpiCommandError {
+    fn from(e: MapError) -> Self {
+        UnpiCommandError::Map(e)
     }
 }

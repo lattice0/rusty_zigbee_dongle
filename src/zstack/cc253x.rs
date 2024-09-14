@@ -79,7 +79,7 @@ impl<S: SimpleSerial<SUnpiPacket>> CC253X<S> {
         subsystem: Subsystem,
         parameters: &[(&'static str, ParameterValue)],
     ) -> Result<(), CoordinatorError> {
-        Ok(request(name, subsystem, parameters, &mut *self.serial.lock().await).await?)
+        Ok(request(name, subsystem, parameters, self.serial.clone()).await?)
     }
 
     async fn wait_for(
@@ -120,8 +120,9 @@ impl<S: SimpleSerial<SUnpiPacket>> CC253X<S> {
                 .await
                 .map_err(|e| CoordinatorError::Serial(e))
         };
-        futures::try_join!(send, wait)
-            .map(|(_, (packet, command))| command.read_and_fill(packet.payload.as_slice()))?
+        let r = futures::try_join!(send, wait)
+            .map(|(_, (packet, command))| command.read_and_fill(packet.payload.as_slice()));
+        Ok(r??)
     }
 
     pub async fn begin_startup(&self) -> Result<CommandStatus, CoordinatorError> {
@@ -140,7 +141,7 @@ impl<S: SimpleSerial<SUnpiPacket>> CC253X<S> {
             info!("reading filling command: {:?}", command);
             command.read_and_fill(packet.payload.as_slice())
         })??;
-        let c = TryInto::<CommandStatus>::try_into(r);
+        let c = TryInto::<CommandStatus>::try_into(r.clone());
         let r = match c {
             Ok(c) => c,
             Err(_) => {
