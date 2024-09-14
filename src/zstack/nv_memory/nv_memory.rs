@@ -1,16 +1,30 @@
-use crate::{subscription::SubscriptionService, zstack::unpi::{commands::Command, serial::{wait_for, UnpiCommandError}, MessageType, SUnpiPacket, Subsystem}};
+use crate::{
+    parameters::ParameterValue,
+    serial::SimpleSerial,
+    subscription::SubscriptionService,
+    zstack::unpi::{
+        commands::Command,
+        serial::{request, wait_for, UnpiCommandError},
+        MessageType, SUnpiPacket, Subsystem,
+    },
+};
 use futures::lock::Mutex;
 use std::sync::Arc;
 
-pub struct NvMemoryAdapter {
+pub struct NvMemoryAdapter<S: SimpleSerial<SUnpiPacket>> {
+    serial: Arc<Mutex<S>>,
     subscriptions: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
 }
 
-impl NvMemoryAdapter {
+impl<S: SimpleSerial<SUnpiPacket>> NvMemoryAdapter<S> {
     pub fn new(
+        serial: Arc<Mutex<S>>,
         subscriptions: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
     ) -> Result<Self, NvMemoryAdapterError> {
-        Ok(NvMemoryAdapter { subscriptions })
+        Ok(NvMemoryAdapter {
+            serial,
+            subscriptions,
+        })
     }
 
     async fn wait_for(
@@ -30,21 +44,18 @@ impl NvMemoryAdapter {
         .await?)
     }
 
-    pub fn read_item(&self, id: u16) -> Result<Vec<u8>, NvMemoryAdapterError> {
-        let (packet, _) = futures::executor::block_on(self.wait_for(
-            "NV_READ",
-            MessageType::AREQ,
-            Subsystem::Sys,
-            Some(std::time::Duration::from_secs(5)),
-        ))?;
-        if packet.payload.len() < 2 {
-            return Err(NvMemoryAdapterError::InvalidData);
-        }
-        let item_id = u16::from_le_bytes([packet.payload[0], packet.payload[1]]);
-        if item_id != id {
-            return Err(NvMemoryAdapterError::InvalidData);
-        }
-        Ok(packet.payload[2..].to_vec())
+    async fn request(
+        &self,
+        name: &str,
+        subsystem: Subsystem,
+        parameters: &[(&'static str, ParameterValue)],
+    ) -> Result<(), NvMemoryAdapterError> {
+        request(name, subsystem, parameters, &mut *self.serial.lock().await).await?;
+        Ok(())
+    }
+
+    pub async fn read_item(&self, id: u16) -> Result<Vec<u8>, NvMemoryAdapterError> {
+        todo!()
     }
 }
 
@@ -53,10 +64,17 @@ pub enum NvMemoryAdapterError {
     IoError(std::io::Error),
     InvalidData,
     UnpiCommand(UnpiCommandError),
+    Io(std::io::Error),
 }
 
 impl From<UnpiCommandError> for NvMemoryAdapterError {
     fn from(e: UnpiCommandError) -> Self {
         NvMemoryAdapterError::UnpiCommand(e)
+    }
+}
+
+impl From<std::io::Error> for NvMemoryAdapterError {
+    fn from(e: std::io::Error) -> Self {
+        NvMemoryAdapterError::IoError(e)
     }
 }

@@ -1,6 +1,5 @@
 use crate::{
-    parameters::{ParameterError, ParameterValue},
-    utils::map::{MapError, StaticMap}, zstack::{nv_memory::nv_memory::NvMemoryAdapterError, unpi::serial::UnpiCommandError},
+    parameters::{ParameterError, ParameterValue}, serial::SerialThreadError, utils::map::{MapError, StaticMap}, zstack::{nv_memory::nv_memory::NvMemoryAdapterError, unpi::serial::UnpiCommandError}
 };
 use std::future::Future;
 
@@ -153,6 +152,7 @@ pub enum ResetType {
 #[derive(Debug)]
 pub enum CoordinatorError {
     SerialOpen(String),
+    Serial(SerialThreadError),
     SerialWrite,
     SerialRead,
     NoCommandWithName(String),

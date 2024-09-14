@@ -6,51 +6,10 @@ pub struct Predicate<T>(pub Box<dyn Fn(&T) -> bool + Send + Sync>);
 pub struct Action<T>(pub Box<dyn FnOnce(&T) + Send + Sync>);
 pub struct Event<T>(pub Box<dyn Fn(&T) + Send + Sync>);
 
-#[derive(Debug)]
-pub enum Subscription<T> {
-    SingleShot(Predicate<T>, Action<T>),
-    Event(Predicate<T>, Event<T>),
-}
-
-impl<T> Subscription<T> {
-    fn is_single_shot(&self) -> bool {
-        matches!(self, Subscription::SingleShot(_, _))
-    }
-
-    fn into_action(self) -> Option<(Predicate<T>, Action<T>)> {
-        match self {
-            Subscription::SingleShot(predicate, tx) => Some((predicate, tx)),
-            _ => None,
-        }
-    }
-}
-
-impl<T> std::fmt::Debug for Predicate<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Predicate")
-    }
-}
-
-impl<T> std::fmt::Debug for Action<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Action")
-    }
-}
-
-impl<T> std::fmt::Debug for Event<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Action")
-    }
-}
-
+/// Subscribe to a single event or multiple events with a predicate that runs on each ocurrence.
+/// If the predicate returns true, then the closure on the second element is executed.
 pub struct SubscriptionService<T> {
     subscriptions: VecDeque<Subscription<T>>,
-}
-
-impl<T: Clone + PartialEq + std::fmt::Debug> Default for SubscriptionService<T> {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl<T: Clone + PartialEq + std::fmt::Debug> SubscriptionService<T> {
@@ -105,10 +64,55 @@ impl<T: Clone + PartialEq + std::fmt::Debug> SubscriptionService<T> {
     }
 }
 
+impl<T: Clone + PartialEq + std::fmt::Debug> Default for SubscriptionService<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// A subscription can be a single shot (only happens once and thus the closure moves) or an event (happens multiple times).
+/// On both cases the closure is executed according to the predicate being true
+#[derive(Debug)]
+pub enum Subscription<T> {
+    SingleShot(Predicate<T>, Action<T>),
+    Event(Predicate<T>, Event<T>),
+}
+
+impl<T> Subscription<T> {
+    fn is_single_shot(&self) -> bool {
+        matches!(self, Subscription::SingleShot(_, _))
+    }
+
+    fn into_action(self) -> Option<(Predicate<T>, Action<T>)> {
+        match self {
+            Subscription::SingleShot(predicate, tx) => Some((predicate, tx)),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum SubscriptionError {
     MissingSubscription,
     NotAction,
     Unreachable,
     Send,
+}
+
+impl<T> std::fmt::Debug for Predicate<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Predicate")
+    }
+}
+
+impl<T> std::fmt::Debug for Action<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Action")
+    }
+}
+
+impl<T> std::fmt::Debug for Event<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Action")
+    }
 }

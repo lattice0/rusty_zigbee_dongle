@@ -2,6 +2,7 @@ use futures::executor::block_on;
 use log::info;
 use rusty_zigbee_dongle::{
     coordinator::{Coordinator, CoordinatorError, ZigbeeEvent},
+    serial::simple_serial_port::SimpleSerialPort,
     utils::sleep::sleep_forever,
     zstack::cc253x::CC253X,
 };
@@ -14,8 +15,9 @@ fn main() {
         .init();
 
     let f = async {
-        let mut cc2531 = CC253X::from_path(PathBuf::from("/dev/ttyACM2"), 115_200).unwrap();
-
+        let mut cc2531 = CC253X::from_simple_serial("/dev/ttyACM1", 115_200)
+            .await
+            .unwrap();
         cc2531
             .set_on_event(Box::new(|event| {
                 match event {

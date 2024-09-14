@@ -11,7 +11,9 @@ fn main() {
     env_logger::init();
 
     let f = async {
-        let cc2531 = CC253X::from_path(PathBuf::from("/dev/ttyACM0"), 115_200).unwrap();
+        let cc2531 = CC253X::from_simple_serial("/dev/ttyACM1", 115_200)
+            .await
+            .unwrap();
 
         // Not all firmware versions support LED write as far as I understood
         let a = async {

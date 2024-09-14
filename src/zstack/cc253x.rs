@@ -1,10 +1,11 @@
+use super::{nv_memory::nv_memory::NvMemoryAdapter, unpi::serial::request};
 use crate::{
     coordinator::{
         AddressMode, Coordinator, CoordinatorError, DeviceInfo, LedStatus, OnEvent, ResetType,
         ZigbeeEvent,
     },
     parameters::ParameterValue,
-    serial::{simple_serial_port::SimpleSerialPort, SubscriptionSerial},
+    serial::{simple_serial_port::SimpleSerialPort, SimpleSerial},
     subscription::{Event, Predicate, Subscription, SubscriptionService},
     utils::{error, info, trace, warn},
     zstack::unpi::{
@@ -15,39 +16,40 @@ use crate::{
     },
 };
 use futures::{executor::block_on, lock::Mutex};
-use std::{ops::Deref, path::PathBuf, sync::Arc};
-
-use super::nv_memory::nv_memory::NvMemoryAdapter;
+use std::{ops::Deref, sync::Arc};
 
 //TODO: fix this
 const MAXIMUM_ZIGBEE_PAYLOAD_SIZE: usize = 255;
 
-pub struct CC253X<S: SubscriptionSerial<SUnpiPacket>> {
+pub struct CC253X<S: SimpleSerial<SUnpiPacket>> {
     _supports_led: Option<bool>,
+    // Subscribe to events (packets and others) here
     subscriptions: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
+    // Send data directly to serial here, but for reading we use the subscription service above
     serial: Arc<Mutex<S>>,
     on_zigbee_event: Arc<Mutex<Option<OnEvent>>>,
-    _nv_adapter: NvMemoryAdapter,
+    _nv_adapter: NvMemoryAdapter<S>,
 }
 
 impl CC253X<SimpleSerialPort<SUnpiPacket>> {
-    pub fn from_path(path: PathBuf, baud_rate: u32) -> Result<Self, CoordinatorError> {
+    pub async fn from_simple_serial(path: &str, baud_rate: u32) -> Result<Self, CoordinatorError> {
         let on_zigbee_event = Arc::new(Mutex::new(Option::<OnEvent>::None));
-        let mut subscription_service = SubscriptionService::new();
-
+        let subscriptions = Arc::new(Mutex::new(SubscriptionService::new()));
+        let serial = SimpleSerialPort::new(path, baud_rate, subscriptions.clone())?;
         let device_announce_command = get_command_by_name(&Subsystem::Zdo, "tc_device_index")
             .ok_or(CoordinatorError::NoCommandWithName(
                 "tc_device_index".to_string(),
             ))?;
-        let _on_zigbee_event = on_zigbee_event.clone();
-        subscription_service.subscribe(Subscription::Event(
+
+        let on_zigbee_event_clone = on_zigbee_event.clone();
+        subscriptions.lock().await.subscribe(Subscription::Event(
             Predicate(Box::new(|packet: &SUnpiPacket| {
                 packet.type_subsystem == (MessageType::AREQ, Subsystem::Zdo)
                     && packet.command == device_announce_command.id
             })),
             Event(Box::new(move |packet: &SUnpiPacket| {
                 let a = async {
-                    if let Some(on_zigbee_event) = _on_zigbee_event.lock().await.deref() {
+                    if let Some(on_zigbee_event) = on_zigbee_event_clone.lock().await.deref() {
                         (on_zigbee_event)(ZigbeeEvent::DeviceAnnounce {
                             network_address: packet.payload[0] as u16,
                             ieee_address: packet.payload[1..9].try_into().unwrap(),
@@ -58,42 +60,26 @@ impl CC253X<SimpleSerialPort<SUnpiPacket>> {
                 block_on(a);
             })),
         ));
-        let subscriptions = Arc::new(Mutex::new(subscription_service));
 
-        let mut serial = SimpleSerialPort::new(
-            path.to_str()
-                .ok_or(CoordinatorError::Io("not a path".to_string()))?,
-            baud_rate,
-            subscriptions.clone(),
-        )?;
-        serial.start()?;
+        let serial = Arc::new(Mutex::new(serial));
         Ok(Self {
-            serial: Arc::new(Mutex::new(serial)),
+            serial: serial.clone(),
             _supports_led: None,
             subscriptions: subscriptions.clone(),
             on_zigbee_event,
-            _nv_adapter: NvMemoryAdapter::new(subscriptions)?,
+            _nv_adapter: NvMemoryAdapter::new(serial, subscriptions)?,
         })
     }
 }
 
-impl<S: SubscriptionSerial<SUnpiPacket>> CC253X<S> {
+impl<S: SimpleSerial<SUnpiPacket>> CC253X<S> {
     pub async fn request(
         &self,
         name: &str,
         subsystem: Subsystem,
         parameters: &[(&'static str, ParameterValue)],
     ) -> Result<(), CoordinatorError> {
-        let command = get_command_by_name(&subsystem, name)
-            .ok_or(CoordinatorError::NoCommandWithName(name.to_string()))?;
-        let packet = SUnpiPacket::from_command_owned(
-            LenTypeInfo::OneByte,
-            (command.command_type, subsystem),
-            parameters,
-            command,
-        )?;
-        self.serial.lock().await.write(&packet).await?;
-        Ok(())
+        Ok(request(name, subsystem, parameters, &mut *self.serial.lock().await).await?)
     }
 
     async fn wait_for(
@@ -130,7 +116,9 @@ impl<S: SubscriptionSerial<SUnpiPacket>> CC253X<S> {
         let wait = self.wait_for(name, MessageType::SRESP, subsystem, None);
         let send = async {
             let mut lock = self.serial.lock().await;
-            lock.write(&packet).await
+            lock.write(&packet)
+                .await
+                .map_err(|e| CoordinatorError::Serial(e))
         };
         futures::try_join!(send, wait)
             .map(|(_, (packet, command))| command.read_and_fill(packet.payload.as_slice()))?
@@ -164,7 +152,7 @@ impl<S: SubscriptionSerial<SUnpiPacket>> CC253X<S> {
     }
 }
 
-impl<S: SubscriptionSerial<SUnpiPacket>> Coordinator for CC253X<S> {
+impl<S: SimpleSerial<SUnpiPacket>> Coordinator for CC253X<S> {
     type ZclFrame = psila_data::cluster_library::ClusterLibraryHeader;
 
     type ZclPayload<'a> = ([u8; MAXIMUM_ZIGBEE_PAYLOAD_SIZE], usize);

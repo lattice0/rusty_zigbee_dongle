@@ -3,6 +3,7 @@ use crate::{
     serial::simple_serial_port::ToSerial, utils::slice_reader::SliceReader,
 };
 use commands::Command;
+use serial::UnpiCommandError;
 use std::{future::Future, io::Write};
 
 pub mod commands;
@@ -353,7 +354,7 @@ impl<'a> UnpiPacket<Vec<u8>> {
         type_subsystem: (MessageType, Subsystem),
         parameters: &[(&'static str, ParameterValue)],
         command: &Command,
-    ) -> Result<UnpiPacket<Vec<u8>>, CoordinatorError> {
+    ) -> Result<UnpiPacket<Vec<u8>>, UnpiCommandError> {
         let mut payload = vec![0u8; MAX_PAYLOAD_SIZE];
         let written = command.fill_and_write(parameters, &mut payload)?;
         let h = UnpiPacket {

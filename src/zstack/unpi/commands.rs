@@ -1,4 +1,4 @@
-use super::{subsystems::SUBSYSTEMS, MessageType, Subsystem};
+use super::{serial::UnpiCommandError, subsystems::SUBSYSTEMS, MessageType, Subsystem};
 use crate::{
     coordinator::CoordinatorError,
     parameters::{ParameterType, ParameterValue},
@@ -25,7 +25,7 @@ impl Command {
         &self,
         parameters: &[(&'static str, ParameterValue)],
         mut output: &mut [u8],
-    ) -> Result<usize, CoordinatorError> {
+    ) -> Result<usize, UnpiCommandError> {
         let len = output.len();
         if let Some(request) = self.request.as_ref() {
             // Let's fill the values and match against the template in self.request, just for safety
@@ -33,17 +33,17 @@ impl Command {
                 // Find parameter in request
                 let parameter_type = request
                     .get(name)
-                    .ok_or(CoordinatorError::NoCommandWithName(name.to_string()))?;
+                    .ok_or(UnpiCommandError::NoCommandWithName(name.to_string()))?;
                 if request.contains_key(name) {
                     // Only writes if we match the parameter type
                     let written = value.match_and_write(parameter_type, output)?;
                     let new_output = std::mem::take(&mut output);
                     output = &mut new_output[written..];
                 } else {
-                    return Err(CoordinatorError::NoCommandWithName(name.to_string()));
+                    return Err(UnpiCommandError::NoCommandWithName(name.to_string()));
                 }
 
-                Ok::<(), CoordinatorError>(())
+                Ok::<(), UnpiCommandError>(())
             })?;
         }
         Ok(len - output.len())

@@ -3,16 +3,40 @@ use super::{
     MessageType, SUnpiPacket, Subsystem, UnpiPacket,
 };
 use crate::{
-    coordinator::CoordinatorError, parameters::ParameterValue, subscription::{Action, Predicate, Subscription, SubscriptionService}, zstack::unpi::{LenTypeInfo, MAX_PAYLOAD_SIZE}
+    coordinator::CoordinatorError,
+    parameters::ParameterValue,
+    serial::SimpleSerial,
+    subscription::{Action, Predicate, Subscription, SubscriptionService},
+    zstack::unpi::{LenTypeInfo, MAX_PAYLOAD_SIZE},
 };
+use crate::{parameters::ParameterError, serial::SerialThreadError, utils::info};
 use futures::{
     channel::oneshot::{self, Receiver, Sender},
     lock::Mutex,
 };
 use serialport::SerialPort;
 use std::sync::Arc;
-use crate::utils::info;
 
+// reusable request function
+pub async fn request<S: SimpleSerial<SUnpiPacket>>(
+    name: &str,
+    subsystem: Subsystem,
+    parameters: &[(&'static str, ParameterValue)],
+    serial: &mut S,
+) -> Result<(), UnpiCommandError> {
+    let command = get_command_by_name(&subsystem, name)
+        .ok_or(UnpiCommandError::NoCommandWithName(name.to_string()))?;
+    let packet = SUnpiPacket::from_command_owned(
+        LenTypeInfo::OneByte,
+        (command.command_type, subsystem),
+        parameters,
+        command,
+    )?;
+    serial.write(&packet).await?;
+    Ok(())
+}
+
+// reusable wait_for function
 pub async fn wait_for(
     name: &str,
     message_type: MessageType,
@@ -47,7 +71,6 @@ pub async fn wait_for(
         response_command,
     ))
 }
-
 
 impl<T> UnpiPacket<T>
 where
@@ -104,4 +127,25 @@ pub enum UnpiCommandError {
     NoCommandWithName(String),
     InvalidMessageType,
     SubscriptionError,
+    Parameter(ParameterError),
+    Serial(SerialThreadError),
+    Io(std::io::Error),
+}
+
+impl From<ParameterError> for UnpiCommandError {
+    fn from(e: ParameterError) -> Self {
+        UnpiCommandError::Parameter(e)
+    }
+}
+
+impl From<std::io::Error> for UnpiCommandError {
+    fn from(e: std::io::Error) -> Self {
+        UnpiCommandError::Io(e)
+    }
+}
+
+impl From<SerialThreadError> for UnpiCommandError {
+    fn from(e: SerialThreadError) -> Self {
+        UnpiCommandError::Serial(e)
+    }
 }
