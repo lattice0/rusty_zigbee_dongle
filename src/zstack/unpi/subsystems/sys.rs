@@ -75,33 +75,3 @@ pub const COMMANDS_SYS: &[Command] = &[
         response: Some(StaticMap::new(&[("status", ParameterType::U8)])),
     },
 ];
-
-/*
-{
-{
-            name: 'osalNvReadExt',
-            ID: 28,
-            type: CommandType.SREQ,
-            request: [
-                {name: 'id', parameterType: ParameterType.UINT16},
-                {name: 'offset', parameterType: ParameterType.UINT16},
-            ],
-            response: [
-                {name: 'status', parameterType: ParameterType.UINT8},
-                {name: 'len', parameterType: ParameterType.UINT8},
-                {name: 'value', parameterType: ParameterType.BUFFER},
-            ],
-        },
-        {
-            name: 'osalNvWriteExt',
-            ID: 29,
-            type: CommandType.SREQ,
-            request: [
-                {name: 'id', parameterType: ParameterType.UINT16},
-                {name: 'offset', parameterType: ParameterType.UINT16},
-                {name: 'len', parameterType: ParameterType.UINT16},
-                {name: 'value', parameterType: ParameterType.BUFFER},
-            ],
-            response: [{name: 'status', parameterType: ParameterType.UINT8}],
-        },
-*/

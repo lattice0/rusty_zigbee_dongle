@@ -3,9 +3,9 @@ use crate::{
     serial::SimpleSerial,
     subscription::SubscriptionService,
     zstack::unpi::{
-        commands::Command,
-        serial::{request, wait_for, UnpiCommandError},
-        MessageType, SUnpiPacket, Subsystem,
+        commands::ParametersValueMap,
+        serial::{request_with_reply, UnpiCommandError},
+        SUnpiPacket, Subsystem,
     },
 };
 use futures::lock::Mutex;
@@ -27,61 +27,88 @@ impl<S: SimpleSerial<SUnpiPacket>> NvMemoryAdapter<S> {
         })
     }
 
+    // // helper proxy function
+    // async fn wait_for(
+    //     &self,
+    //     name: &str,
+    //     message_type: MessageType,
+    //     subsystem: Subsystem,
+    //     timeout: Option<std::time::Duration>,
+    // ) -> Result<(SUnpiPacket, Command), NvMemoryAdapterError> {
+    //     Ok(wait_for(
+    //         name,
+    //         message_type,
+    //         subsystem,
+    //         self.subscriptions.clone(),
+    //         timeout,
+    //     )
+    //     .await?)
+    // }
+
+    // // helper proxy function
+    // async fn request(
+    //     &self,
+    //     name: &str,
+    //     subsystem: Subsystem,
+    //     parameters: &[(&'static str, ParameterValue)],
+    //     _timeout: Option<std::time::Duration>,
+    // ) -> Result<(), NvMemoryAdapterError> {
+    //     request(name, subsystem, parameters, self.serial.clone()).await?;
+    //     Ok(())
+    // }
+
     // helper proxy function
-    async fn wait_for(
+    async fn request_with_reply(
         &self,
         name: &str,
-        message_type: MessageType,
         subsystem: Subsystem,
+        parameters: &[(&'static str, ParameterValue)],
         timeout: Option<std::time::Duration>,
-    ) -> Result<(SUnpiPacket, Command), NvMemoryAdapterError> {
-        Ok(wait_for(
+    ) -> Result<ParametersValueMap, NvMemoryAdapterError> {
+        Ok(request_with_reply(
             name,
-            message_type,
             subsystem,
+            parameters,
+            self.serial.clone(),
             self.subscriptions.clone(),
             timeout,
         )
         .await?)
     }
 
-    // helper proxy function
-    async fn request(
+    pub async fn read_item<I: TryInto<NvItem>>(
         &self,
-        name: &str,
-        subsystem: Subsystem,
-        parameters: &[(&'static str, ParameterValue)],
-        _timeout: Option<std::time::Duration>,
-    ) -> Result<(), NvMemoryAdapterError> {
-        request(name, subsystem, parameters, self.serial.clone()).await?;
-        Ok(())
-    }
-
-    // helper proxy function
-    async fn request_with_reply(
-        &self,
-        name: &str,
-        message_type: MessageType,
-        subsystem: Subsystem,
-        parameters: &[(&'static str, ParameterValue)],
-        timeout: Option<std::time::Duration>,
-    ) -> Result<(), NvMemoryAdapterError> {
-        self.wait_for(name, message_type, subsystem, timeout)
-            .await?;
-        self.request(name, subsystem, parameters, timeout).await?;
-        Ok(())
-    }
-
-    pub async fn read_item(&self, _id: u16) -> Result<Vec<u8>, NvMemoryAdapterError> {
-        let _l = self
+        id: u16,
+    ) -> Result<NvItem, NvMemoryAdapterError> {
+        let r = self
             .request_with_reply(
                 "osal_nv_length",
-                MessageType::SREQ,
                 Subsystem::Sys,
-                &[("id", ParameterValue::U16(100))],
+                &[("id", ParameterValue::U16(id))],
                 None,
             )
-            .await;
+            .await?;
+        println!("r: {:?}", r);
+        let status = r
+            .get(&"status")
+            .ok_or(NvMemoryAdapterError::MissingResponse)?;
+        let len = r
+            .get(&"status")
+            .ok_or(NvMemoryAdapterError::MissingResponse)?;
+        let value = r
+            .get(&"value")
+            .ok_or(NvMemoryAdapterError::MissingResponse)?;
+        println!("{:?}, {:?}, {:?}", status, len, value);
+        todo!()
+    }
+}
+
+pub enum NvItem {}
+
+impl TryFrom<()> for NvItem {
+    type Error = NvMemoryAdapterError;
+
+    fn try_from(_: ()) -> Result<Self, Self::Error> {
         todo!()
     }
 }
@@ -92,6 +119,7 @@ pub enum NvMemoryAdapterError {
     InvalidData,
     UnpiCommand(UnpiCommandError),
     Io(std::io::Error),
+    MissingResponse,
 }
 
 impl From<UnpiCommandError> for NvMemoryAdapterError {
