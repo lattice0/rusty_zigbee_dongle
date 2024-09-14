@@ -1,4 +1,7 @@
-use super::{nv_memory::nv_memory::NvMemoryAdapter, unpi::serial::request};
+use super::{
+    nv_memory::nv_memory::NvMemoryAdapter,
+    unpi::serial::{request, request_with_reply},
+};
 use crate::{
     coordinator::{
         AddressMode, Coordinator, CoordinatorError, DeviceInfo, LedStatus, OnEvent, ResetType,
@@ -12,7 +15,7 @@ use crate::{
         commands::{get_command_by_name, Command, ParametersValueMap},
         constants::{af, CommandStatus},
         serial::wait_for,
-        LenTypeInfo, MessageType, SUnpiPacket, Subsystem,
+        MessageType, SUnpiPacket, Subsystem,
     },
 };
 use futures::{executor::block_on, lock::Mutex};
@@ -73,6 +76,7 @@ impl CC253X<SimpleSerialPort<SUnpiPacket>> {
 }
 
 impl<S: SimpleSerial<SUnpiPacket>> CC253X<S> {
+    // helper proxy function
     pub async fn request(
         &self,
         name: &str,
@@ -82,6 +86,7 @@ impl<S: SimpleSerial<SUnpiPacket>> CC253X<S> {
         Ok(request(name, subsystem, parameters, self.serial.clone()).await?)
     }
 
+    // helper proxy function
     async fn wait_for(
         &self,
         name: &str,
@@ -99,30 +104,23 @@ impl<S: SimpleSerial<SUnpiPacket>> CC253X<S> {
         .await?)
     }
 
+    // helper proxy function
     pub async fn request_with_reply(
         &self,
         name: &str,
         subsystem: Subsystem,
         parameters: &[(&'static str, ParameterValue)],
+        timeout: Option<std::time::Duration>,
     ) -> Result<ParametersValueMap, CoordinatorError> {
-        let command = get_command_by_name(&subsystem, name)
-            .ok_or(CoordinatorError::NoCommandWithName(name.to_string()))?;
-        let packet = SUnpiPacket::from_command_owned(
-            LenTypeInfo::OneByte,
-            (command.command_type, subsystem),
+        Ok(request_with_reply(
+            name,
+            subsystem,
             parameters,
-            command,
-        )?;
-        let wait = self.wait_for(name, MessageType::SRESP, subsystem, None);
-        let send = async {
-            let mut lock = self.serial.lock().await;
-            lock.write(&packet)
-                .await
-                .map_err(|e| CoordinatorError::Serial(e))
-        };
-        let r = futures::try_join!(send, wait)
-            .map(|(_, (packet, command))| command.read_and_fill(packet.payload.as_slice()));
-        Ok(r??)
+            self.serial.clone(),
+            self.subscriptions.clone(),
+            timeout,
+        )
+        .await?)
     }
 
     pub async fn begin_startup(&self) -> Result<CommandStatus, CoordinatorError> {
@@ -163,7 +161,9 @@ impl<S: SimpleSerial<SUnpiPacket>> Coordinator for CC253X<S> {
     async fn start(&self) -> Result<(), CoordinatorError> {
         for attempt in 0..3 {
             trace!("pinging coordinator attempt number {:?}", attempt);
-            let ping = self.request_with_reply("ping", Subsystem::Sys, &[]).await?;
+            let ping = self
+                .request_with_reply("ping", Subsystem::Sys, &[], None)
+                .await?;
             if ping.get(&"capabilities").is_some() {
                 trace!("ping successful");
                 let version = self.version().await?;
@@ -192,7 +192,7 @@ impl<S: SimpleSerial<SUnpiPacket>> Coordinator for CC253X<S> {
 
     async fn version(&self) -> Result<Option<ParameterValue>, CoordinatorError> {
         let version = self
-            .request_with_reply("version", Subsystem::Sys, &[])
+            .request_with_reply("version", Subsystem::Sys, &[], None)
             .await?;
         Ok(version.get(&"majorrel").cloned())
     }
@@ -361,7 +361,7 @@ impl<S: SimpleSerial<SUnpiPacket>> Coordinator for CC253X<S> {
     async fn device_info(&self) -> Result<DeviceInfo, CoordinatorError> {
         info!("getting device info...");
         let device_info: DeviceInfo = self
-            .request_with_reply("get_device_info", Subsystem::Util, &[])
+            .request_with_reply("get_device_info", Subsystem::Util, &[], None)
             .await?
             .try_into()?;
         Ok(device_info)

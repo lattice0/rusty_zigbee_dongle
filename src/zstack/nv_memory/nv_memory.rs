@@ -27,6 +27,7 @@ impl<S: SimpleSerial<SUnpiPacket>> NvMemoryAdapter<S> {
         })
     }
 
+    // helper proxy function
     async fn wait_for(
         &self,
         name: &str,
@@ -44,6 +45,7 @@ impl<S: SimpleSerial<SUnpiPacket>> NvMemoryAdapter<S> {
         .await?)
     }
 
+    // helper proxy function
     async fn request(
         &self,
         name: &str,
@@ -55,6 +57,7 @@ impl<S: SimpleSerial<SUnpiPacket>> NvMemoryAdapter<S> {
         Ok(())
     }
 
+    // helper proxy function
     async fn request_with_reply(
         &self,
         name: &str,
@@ -65,7 +68,7 @@ impl<S: SimpleSerial<SUnpiPacket>> NvMemoryAdapter<S> {
     ) -> Result<(), NvMemoryAdapterError> {
         self.wait_for(name, message_type, subsystem, timeout)
             .await?;
-        request(name, subsystem, parameters, self.serial.clone()).await?;
+        self.request(name, subsystem, parameters, timeout).await?;
         Ok(())
     }
 
