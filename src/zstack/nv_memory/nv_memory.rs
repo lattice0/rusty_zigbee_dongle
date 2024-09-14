@@ -11,6 +11,8 @@ use crate::{
 use futures::lock::Mutex;
 use std::sync::Arc;
 
+use super::NvItemId;
+
 pub struct NvMemoryAdapter<S: SimpleSerial<SUnpiPacket>> {
     serial: Arc<Mutex<S>>,
     subscriptions: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
@@ -78,27 +80,42 @@ impl<S: SimpleSerial<SUnpiPacket>> NvMemoryAdapter<S> {
 
     pub async fn read_item<I: TryInto<NvItem>>(
         &self,
-        id: u16,
+        id: NvItemId,
     ) -> Result<NvItem, NvMemoryAdapterError> {
         let r = self
             .request_with_reply(
                 "osal_nv_length",
                 Subsystem::Sys,
-                &[("id", ParameterValue::U16(id))],
+                &[("id", ParameterValue::U16(id.into()))],
                 None,
             )
             .await?;
         println!("r: {:?}", r);
-        let status = r
-            .get(&"status")
-            .ok_or(NvMemoryAdapterError::MissingResponse)?;
-        let len = r
-            .get(&"status")
-            .ok_or(NvMemoryAdapterError::MissingResponse)?;
-        let value = r
-            .get(&"value")
-            .ok_or(NvMemoryAdapterError::MissingResponse)?;
-        println!("{:?}, {:?}, {:?}", status, len, value);
+        let length = r.get(&"length").ok_or(NvMemoryAdapterError::InvalidData)?;
+        if let ParameterValue::U16(len) = length {
+            let r = self
+                .request_with_reply(
+                    "osal_nv_read",
+                    Subsystem::Sys,
+                    &[
+                        ("id", ParameterValue::U16(id.into())),
+                        ("offset", ParameterValue::U16(0)),
+                    ],
+                    None,
+                )
+                .await?;
+            println!("r: {:?}", r);
+            let status = r
+                .get(&"status")
+                .ok_or(NvMemoryAdapterError::MissingResponse)?;
+            let len = r
+                .get(&"status")
+                .ok_or(NvMemoryAdapterError::MissingResponse)?;
+            let value = r
+                .get(&"value")
+                .ok_or(NvMemoryAdapterError::MissingResponse)?;
+            println!("{:?}, {:?}, {:?}", status, len, value);
+        }
         todo!()
     }
 }

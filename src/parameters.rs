@@ -26,7 +26,10 @@ impl ParameterType {
             ParameterType::ListU16(len) => ParameterValue::ListU16(
                 reader.read_u16_array(len.ok_or(ParameterError::MissingListLength)?)?,
             ),
-            ParameterType::Buffer => ParameterValue::Buffer(reader.read_u8_array(8)?),
+            ParameterType::Buffer => {
+                let (buffer, len) = reader.read_as_many_u8()?;
+                ParameterValue::Buffer(buffer, len)
+            }
         })
     }
 }
@@ -83,7 +86,7 @@ pub enum ParameterValue {
     I8(i8),
     IeeAddress([u8; 8]),
     ListU16([u16; 16]),
-    Buffer([u8; 128]),
+    Buffer([u8; 128], usize),
 }
 
 impl PartialEq<ParameterType> for ParameterValue {
@@ -95,7 +98,7 @@ impl PartialEq<ParameterType> for ParameterValue {
             ParameterValue::I8(_) => other == &ParameterType::I8,
             ParameterValue::IeeAddress(_) => other == &ParameterType::IeeeAddress,
             ParameterValue::ListU16(_) => matches!(other, ParameterType::ListU16(_)),
-            ParameterValue::Buffer(_) => other == &ParameterType::Buffer,
+            ParameterValue::Buffer(_, _) => other == &ParameterType::Buffer,
         }
     }
 }
@@ -123,7 +126,7 @@ impl ParameterValue {
                     output.write_all(&i.to_le_bytes())?;
                 }
             }
-            ParameterValue::Buffer(_) => todo!(),
+            ParameterValue::Buffer(_, _) => todo!(),
         }
         Ok(len - output.len())
     }

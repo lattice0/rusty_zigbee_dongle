@@ -2,7 +2,7 @@ use futures::executor::block_on;
 use log::info;
 use rusty_zigbee_dongle::{
     coordinator::{Coordinator, CoordinatorError},
-    zstack::cc253x::CC253X,
+    zstack::{cc253x::CC253X, nv_memory::NvItemId},
 };
 
 fn main() {
@@ -26,7 +26,11 @@ fn main() {
             cc2531.begin_startup().await.unwrap();
             let device_info = cc2531.device_info().await.unwrap();
             info!("device_info: {:?}", device_info);
-            cc2531.nv_adapter.read_item::<()>(0).await.unwrap();
+            cc2531
+                .nv_adapter
+                .read_item::<()>(NvItemId::ExtAddr)
+                .await
+                .unwrap();
             Ok::<(), CoordinatorError>(())
         };
         futures::try_join!(b)

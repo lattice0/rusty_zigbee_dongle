@@ -73,10 +73,10 @@ impl<'a> SliceReader<'a> {
         Ok(left)
     }
 
-    pub fn read_array<const N: usize>(&mut self) -> Result<[u8; N], std::io::Error> {
+    pub fn read_as_many_u8<const N: usize>(&mut self) -> Result<([u8; N], usize), std::io::Error> {
         let mut buffer = [0u8; N];
-        self.0.read_exact(&mut buffer)?;
-        Ok(buffer)
+        let len = self.0.read(&mut buffer)?;
+        Ok((buffer, len))
     }
 }
 
