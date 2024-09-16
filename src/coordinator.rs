@@ -1,5 +1,8 @@
 use crate::{
-    parameters::{ParameterError, ParameterValue}, serial::SerialThreadError, utils::map::{MapError, StaticMap}, zstack::{nv_memory::nv_memory::NvMemoryAdapterError, unpi::serial::UnpiCommandError}
+    parameters::{ParameterError, ParameterValue},
+    serial::SerialThreadError,
+    utils::map::{MapError, StaticMap},
+    zstack::{nv_memory::nv_memory::NvMemoryAdapterError, unpi::serial::UnpiCommandError},
 };
 use std::future::Future;
 
@@ -174,7 +177,7 @@ pub enum CoordinatorError {
     InvalidResponse,
     InvalidMessageType,
     NvMemoryAdapter(NvMemoryAdapterError),
-    UnpiCommand(UnpiCommandError)
+    UnpiCommand(UnpiCommandError),
 }
 
 impl From<std::io::Error> for CoordinatorError {
@@ -182,7 +185,6 @@ impl From<std::io::Error> for CoordinatorError {
         CoordinatorError::Io(e.to_string())
     }
 }
-
 
 impl From<MapError> for CoordinatorError {
     fn from(e: MapError) -> Self {

@@ -19,5 +19,5 @@ pub enum SerialThreadError {
     SubscriptionWrite,
     PacketParse,
     SerialChannelMissing,
-    SerialChannel
+    SerialChannel,
 }

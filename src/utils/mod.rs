@@ -1,8 +1,9 @@
 pub mod map;
-pub mod slice_reader;
 pub mod sleep;
+pub mod slice_reader;
+pub mod wrap_endianess;
 
-#[cfg(not(feature="log"))]
+#[cfg(not(feature = "log"))]
 mod log {
     macro_rules! info {
         ($($arg:tt)*) => {
@@ -30,19 +31,19 @@ mod log {
     }
 }
 
-#[cfg(feature="log")]
+#[cfg(feature = "log")]
 pub mod log {
-    pub use log::info;
-    pub use log::warn;
     pub use log::error;
+    pub use log::info;
     pub use log::trace;
+    pub use log::warn;
 }
 
 #[allow(unused_imports)]
-pub(crate) use log::info;
-#[allow(unused_imports)]
-pub(crate) use log::warn;
-#[allow(unused_imports)]
 pub(crate) use log::error;
 #[allow(unused_imports)]
+pub(crate) use log::info;
+#[allow(unused_imports)]
 pub(crate) use log::trace;
+#[allow(unused_imports)]
+pub(crate) use log::warn;

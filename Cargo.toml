@@ -9,6 +9,9 @@ psila-data  = {git = "https://github.com/blueluna/psila.git", rev = "9b87f44d3ba
 ieee802154  = {version="0.6.1", optional=true}
 futures     = {version="0.3.3", features=["thread-pool"]}
 log         = {version = "0.4.22", default-features = false, optional = true}
+#quote      = {version = "1.0.37"}
+#syn        = {version = "2.0.77"}
+serde       = {version = "1.0.210", features = ["derive"]}
 
 [dev-dependencies]
 env_logger  = { version = "0.11.5", default-features = false, features = ["auto-color"] }

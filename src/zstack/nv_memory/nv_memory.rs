@@ -1,3 +1,4 @@
+use super::NvItemId;
 use crate::{
     parameters::ParameterValue,
     serial::SimpleSerial,
@@ -10,8 +11,6 @@ use crate::{
 };
 use futures::lock::Mutex;
 use std::sync::Arc;
-
-use super::NvItemId;
 
 pub struct NvMemoryAdapter<S: SimpleSerial<SUnpiPacket>> {
     serial: Arc<Mutex<S>>,
@@ -92,7 +91,7 @@ impl<S: SimpleSerial<SUnpiPacket>> NvMemoryAdapter<S> {
             .await?;
         println!("r: {:?}", r);
         let length = r.get(&"length").ok_or(NvMemoryAdapterError::InvalidData)?;
-        if let ParameterValue::U16(len) = length {
+        if let ParameterValue::U16(_len) = length {
             let r = self
                 .request_with_reply(
                     "osal_nv_read",
