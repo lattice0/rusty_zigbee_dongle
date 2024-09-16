@@ -1,11 +1,6 @@
 use crate::{
     command,
-    parameters::ParameterType,
-    utils::map::StaticMap,
-    zstack::unpi::{
-        commands::{Command, CommandIeeeAddress},
-        MessageType,
-    },
+    zstack::unpi::{commands::CommandIeeeAddress, MessageType},
 };
 
 command! {

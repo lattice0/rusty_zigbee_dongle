@@ -12,7 +12,7 @@ use crate::{
     subscription::{Event, Predicate, Subscription, SubscriptionService},
     utils::{error, info, trace, warn},
     zstack::unpi::{
-        commands::{get_command_by_name, Command, ParametersValueMap},
+        commands::{Command, ParametersValueMap},
         constants::{af, CommandStatus},
         serial::wait_for,
         MessageType, SUnpiPacket, Subsystem,

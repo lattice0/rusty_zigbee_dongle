@@ -1,5 +1,5 @@
 use super::{
-    commands::{Command, ParametersValueMap},
+    commands::{Command, CommandRequest, ParametersValueMap},
     MessageType, SUnpiPacket, Subsystem, UnpiPacket,
 };
 use crate::{
@@ -19,17 +19,15 @@ use serialport::SerialPort;
 use std::sync::Arc;
 
 // reusable request function
-pub async fn request<S: SimpleSerial<SUnpiPacket>>(
-    name: &str,
+pub async fn request<R: CommandRequest,S: SimpleSerial<SUnpiPacket>>(
+    command: R,
     subsystem: Subsystem,
     parameters: &[(&'static str, ParameterValue)],
     serial: Arc<Mutex<S>>,
 ) -> Result<(), UnpiCommandError> {
-    let command = get_command_by_name(&subsystem, name)
-        .ok_or(UnpiCommandError::NoCommandWithName(name.to_string()))?;
     let packet = SUnpiPacket::from_command_owned(
         LenTypeInfo::OneByte,
-        (command.command_type, subsystem),
+        (R::message_type(), subsystem),
         parameters,
         command,
     )?;

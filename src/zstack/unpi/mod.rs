@@ -2,7 +2,7 @@ use crate::{
     parameters::ParameterValue, serial::simple_serial_port::ToSerial,
     utils::slice_reader::SliceReader,
 };
-use commands::Command;
+use commands::{Command, CommandRequest};
 use serial::UnpiCommandError;
 use std::{future::Future, io::Write};
 
@@ -349,7 +349,7 @@ impl<'a> UnpiPacket<Vec<u8>> {
         let fcs = h.checksum()?;
         Ok(UnpiPacket { fcs, ..h })
     }
-    pub fn from_command_owned(
+    pub fn from_command_owned<R: CommandRequest>(
         len_type_info: LenTypeInfo,
         type_subsystem: (MessageType, Subsystem),
         parameters: &[(&'static str, ParameterValue)],

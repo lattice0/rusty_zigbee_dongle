@@ -1,11 +1,6 @@
 use crate::{
     command,
-    parameters::ParameterType,
-    utils::map::StaticMap,
-    zstack::unpi::{
-        commands::{Command, CommandBuffer},
-        MessageType,
-    },
+    zstack::unpi::{commands::Buffer, MessageType},
 };
 
 command! {
@@ -76,7 +71,7 @@ command! {
     struct OsalNvReadResponse {
         status: u8,
         len: u8,
-        value: CommandBuffer
+        value: Buffer
     },
 }
 
@@ -90,7 +85,7 @@ command! {
     struct OsalNvReadExtResponse {
         status: u8,
         len: u8,
-        value: CommandBuffer
+        value: Buffer
     },
 }
 
@@ -101,7 +96,7 @@ command! {
         id: u16,
         offset: u16,
         len: u16,
-        value: CommandBuffer
+        value: Buffer
     },
     struct OsalNvWriteResponse {
         status: u8
