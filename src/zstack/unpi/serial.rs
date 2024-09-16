@@ -1,5 +1,5 @@
 use super::{
-    commands::{get_command_by_name, Command, ParametersValueMap},
+    commands::{Command, ParametersValueMap},
     MessageType, SUnpiPacket, Subsystem, UnpiPacket,
 };
 use crate::{

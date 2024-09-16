@@ -1,33 +1,37 @@
 use crate::{
+    command,
     parameters::ParameterType,
     utils::map::StaticMap,
-    zstack::unpi::{commands::Command, MessageType},
+    zstack::unpi::{
+        commands::{Command, CommandListU16},
+        MessageType,
+    },
 };
 
-pub const COMMANDS_UTIL: &[Command] = &[
-    Command {
-        name: "get_device_info",
-        id: 0,
-        command_type: MessageType::SREQ,
-        request: None,
-        response: Some(StaticMap::new(&[
-            ("status", ParameterType::U8),
-            ("ieee_addr", ParameterType::IeeeAddress),
-            ("short_addr", ParameterType::U16),
-            ("device_type", ParameterType::U8),
-            ("device_state", ParameterType::U8),
-            ("num_assoc_devices", ParameterType::U8),
-            ("assoc_devices_list", ParameterType::ListU16(None)),
-        ])),
+command! {
+    0,
+    MessageType::SREQ,
+    struct GetDeviceInfoRequest {
     },
-    Command {
-        name: "led_control",
-        id: 10,
-        command_type: MessageType::SREQ,
-        request: Some(StaticMap::new(&[
-            ("led_id", ParameterType::U8),
-            ("mode", ParameterType::U8),
-        ])),
-        response: Some(StaticMap::new(&[("status", ParameterType::U8)])),
+    struct GetDeviceInfoResponse {
+        status: u8,
+        ieee_addr: u64,
+        short_addr: u16,
+        device_type: u8,
+        device_state: u8,
+        num_assoc_devices: u8,
+        assoc_devices_list: CommandListU16
     },
-];
+}
+
+command! {
+    10,
+    MessageType::SREQ,
+    struct LedControlRequest {
+        led_id: u8,
+        mode: u8
+    },
+    struct LedControlResponse {
+        status: u8
+    },
+}

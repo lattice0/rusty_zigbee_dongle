@@ -1,4 +1,4 @@
-use super::{serial::UnpiCommandError, subsystems::SUBSYSTEMS, MessageType, Subsystem};
+use super::{serial::UnpiCommandError, MessageType, Subsystem};
 use crate::{
     parameters::{ParameterType, ParameterValue},
     utils::{map::StaticMap, slice_reader::SliceReader},
@@ -16,6 +16,71 @@ pub struct Command {
     pub command_type: MessageType,
     pub request: Option<ParametersTypeMap>,
     pub response: Option<ParametersTypeMap>,
+}
+
+pub trait CommandRequest {
+    type Response;
+
+    fn id() -> u8;
+    fn message_type() -> MessageType;
+}
+
+pub trait CommandResponse {
+    fn message_type() -> MessageType;
+}
+
+pub struct CommandBuffer {
+    pub buffer: [u8; 255],
+    pub len: usize,
+}
+
+pub struct CommandListU16 {
+    pub list: [u16; 255],
+    pub len: usize,
+}
+
+pub struct CommandIeeeAddress {
+    pub ieee_address: [u8; 8],
+}
+
+#[macro_export]
+macro_rules! command {
+    // Match a struct declaration with fields
+    (
+     $id: literal,
+     $mty: expr,
+     struct $name:ident { $( $field:ident : $type:ty ),* },
+     struct $rname:ident { $( $rfield:ident : $rtype:ty ),* },
+    ) => {
+        #[allow(dead_code)]
+        pub struct $name {
+            $( $field: $type ),*
+        }
+
+        impl $crate::zstack::unpi::commands::CommandRequest for $name {
+            type Response = $rname;
+
+            fn id() -> u8 {
+                $id
+            }
+
+            fn message_type() -> $crate::zstack::unpi::MessageType {
+                $mty
+            }
+        }
+
+        #[allow(dead_code)]
+        pub struct $rname {
+            $( $rfield: $rtype ),*
+        }
+
+        // impl $crate::zstack::unpi::commands::CommandResponse for $rname {
+        //     fn message_type() -> $crate::zstack::unpi::MessageType {
+        //         $mty
+        //     }
+        // }
+
+    };
 }
 
 impl Command {
@@ -100,71 +165,5 @@ impl Command {
             }
         };
         Ok(parameters)
-    }
-}
-
-/// Get a command by name, linear (kinda slow) search over the static slice
-pub fn get_command_by_name(subsystem: &Subsystem, name: &str) -> Option<&'static Command> {
-    SUBSYSTEMS
-        .iter()
-        .find(|(s, _)| s == subsystem)
-        .and_then(|(_, cmds)| cmds.iter().find(|c| c.name == name))
-}
-
-/// Get a command by name, linear (kinda slow) search over the static slice
-pub fn get_command_by_id(subsystem: &Subsystem, id: u8) -> Option<&'static Command> {
-    SUBSYSTEMS
-        .iter()
-        .find(|(s, _)| s == subsystem)
-        .and_then(|(_, cmds)| cmds.iter().find(|c| c.id == id))
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_get_command_by_name() {
-        assert!(matches!(
-            get_command_by_name(&Subsystem::Util, "led_control"),
-            Some(Command {
-                name: "led_control",
-                ..
-            })
-        ));
-        assert!(matches!(
-            get_command_by_name(&Subsystem::Util, "not_found"),
-            None
-        ));
-    }
-
-    #[test]
-    fn test_get_command_by_id() {
-        assert!(matches!(
-            get_command_by_id(&Subsystem::Util, 10),
-            Some(Command {
-                name: "led_control",
-                id: 10,
-                ..
-            })
-        ));
-        assert!(matches!(get_command_by_id(&Subsystem::Util, 11), None));
-    }
-
-    #[test]
-    fn test_command() {
-        let command = get_command_by_name(&Subsystem::Util, "led_control").unwrap();
-        let mut buffer = [0; 255];
-        let len = command
-            .fill_and_write(
-                &[
-                    ("led_id", ParameterValue::U8(1)),
-                    ("mode", ParameterValue::U8(1)),
-                ],
-                &mut buffer,
-            )
-            .unwrap();
-        assert_eq!(len, 2);
-        assert_eq!(&buffer[0..len], [1, 1]);
     }
 }
