@@ -1,6 +1,11 @@
 use crate::{
     command,
-    zstack::unpi::{commands::Buffer, MessageType},
+    //utils::slice_writer::SliceWriter,
+    zstack::unpi::{
+        buffer::Buffer,
+        commands::{IntoBytes, IntoBytesError},
+        MessageType,
+    },
 };
 
 command! {

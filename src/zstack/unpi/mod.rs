@@ -3,9 +3,11 @@ use crate::{
     utils::slice_reader::SliceReader,
 };
 use commands::{Command, CommandRequest};
+use serde::Serialize;
 use serial::UnpiCommandError;
 use std::{future::Future, io::Write};
 
+pub mod buffer;
 pub mod commands;
 pub mod constants;
 pub mod serial;
@@ -40,6 +42,13 @@ impl ToSerial for SUnpiPacket {
         let mut unpi_packet_buffer = [0u8; 256];
         let written = self.to_bytes(&mut unpi_packet_buffer)?;
         serial.write_all(&unpi_packet_buffer[0..written])?;
+        Ok(())
+    }
+}
+
+impl<'a> ToSerial for &'a [u8] {
+    fn to_serial<W: std::io::Write + ?Sized>(&self, serial: &mut W) -> Result<(), std::io::Error> {
+        serial.write_all(self)?;
         Ok(())
     }
 }
@@ -330,6 +339,7 @@ impl TryFrom<Wrapped<u8>> for (MessageType, Subsystem) {
         ))
     }
 }
+
 impl<'a> UnpiPacket<Vec<u8>> {
     pub fn from_payload_owned(
         (payload, len_type_info): (&'a [u8], LenTypeInfo),
@@ -349,22 +359,25 @@ impl<'a> UnpiPacket<Vec<u8>> {
         let fcs = h.checksum()?;
         Ok(UnpiPacket { fcs, ..h })
     }
-    pub fn from_command_owned<R: CommandRequest>(
+
+    //TODO: cfg alloc
+    pub fn from_command_owned<R: CommandRequest + Serialize>(
         len_type_info: LenTypeInfo,
         type_subsystem: (MessageType, Subsystem),
-        parameters: &[(&'static str, ParameterValue)],
-        command: &Command,
+        //parameters: &[(&'static str, ParameterValue)],
+        command: &R,
     ) -> Result<UnpiPacket<Vec<u8>>, UnpiCommandError> {
-        let mut payload = vec![0u8; MAX_PAYLOAD_SIZE];
-        let written = command.fill_and_write(parameters, &mut payload)?;
+        let mut payload = Vec::new();
+        bincode::serialize_into(&mut payload, command).unwrap();
+
         let h = UnpiPacket {
             len: match len_type_info {
-                LenTypeInfo::OneByte => LenType::OneByte(written as u8),
-                LenTypeInfo::TwoByte => LenType::TwoByte(written as u16),
+                LenTypeInfo::OneByte => LenType::OneByte(payload.len() as u8),
+                LenTypeInfo::TwoByte => LenType::TwoByte(payload.len() as u16),
             },
             type_subsystem,
-            command: command.id,
-            payload: payload.to_vec(),
+            command: R::id(),
+            payload,
             fcs: 0,
         };
         let fcs = h.checksum()?;

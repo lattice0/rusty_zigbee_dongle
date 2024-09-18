@@ -1,6 +1,10 @@
 use super::{
     nv_memory::nv_memory::NvMemoryAdapter,
-    unpi::serial::{request, request_with_reply},
+    unpi::{
+        commands::CommandRequest,
+        serial::{request, request_with_reply},
+        subsystems::zdo::TcDeviceIndexRequest,
+    },
 };
 use crate::{
     coordinator::{
@@ -19,6 +23,7 @@ use crate::{
     },
 };
 use futures::{executor::block_on, lock::Mutex};
+use serde::Serialize;
 use std::{ops::Deref, sync::Arc};
 
 //TODO: fix this
@@ -39,16 +44,12 @@ impl CC253X<SimpleSerialPort<SUnpiPacket>> {
         let on_zigbee_event = Arc::new(Mutex::new(Option::<OnEvent>::None));
         let subscriptions = Arc::new(Mutex::new(SubscriptionService::new()));
         let serial = SimpleSerialPort::new(path, baud_rate, subscriptions.clone())?;
-        let device_announce_command = get_command_by_name(&Subsystem::Zdo, "tc_device_index")
-            .ok_or(CoordinatorError::NoCommandWithName(
-                "tc_device_index".to_string(),
-            ))?;
 
         let on_zigbee_event_clone = on_zigbee_event.clone();
         subscriptions.lock().await.subscribe(Subscription::Event(
             Predicate(Box::new(|packet: &SUnpiPacket| {
                 packet.type_subsystem == (MessageType::AREQ, Subsystem::Zdo)
-                    && packet.command == device_announce_command.id
+                    && packet.command == TcDeviceIndexRequest::id()
             })),
             Event(Box::new(move |packet: &SUnpiPacket| {
                 let a = async {
@@ -77,13 +78,12 @@ impl CC253X<SimpleSerialPort<SUnpiPacket>> {
 
 impl<S: SimpleSerial<SUnpiPacket>> CC253X<S> {
     // helper proxy function
-    pub async fn request(
+    pub async fn request<R: CommandRequest + Serialize>(
         &self,
         name: &str,
-        subsystem: Subsystem,
-        parameters: &[(&'static str, ParameterValue)],
+        command: &R,
     ) -> Result<(), CoordinatorError> {
-        Ok(request(name, subsystem, parameters, self.serial.clone()).await?)
+        Ok(request(command, self.serial.clone()).await?)
     }
 
     // helper proxy function

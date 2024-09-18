@@ -19,7 +19,7 @@ pub struct Command {
     pub response: Option<ParametersTypeMap>,
 }
 
-pub trait CommandRequest {
+pub trait CommandRequest: std::fmt::Debug {
     type Response;
 
     fn id() -> u8;
@@ -30,11 +30,6 @@ pub trait CommandResponse {
     fn message_type() -> MessageType;
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct Buffer {
-    pub buffer: [u8; 255],
-    pub len: usize,
-}
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ListU16 {
@@ -65,7 +60,7 @@ macro_rules! command {
             $mty,
             struct $name { $( $field : $type ),* },
             struct $rname { $( $rfield : $rtype ),* },
-            WithDefaultReader
+            WithDefaultSerialization
         );
 
     };
@@ -75,14 +70,14 @@ macro_rules! command {
         struct $name:ident { $( $field:ident : $type:ty ),* },
         struct $rname:ident { $( $rfield:ident : $rtype:ty ),* },
         // TryFrom<SliceReader> custom implementation that overrides the default one
-        WithDefaultReader
+        WithDefaultSerialization
     ) => {
         command!(
             $id,
             $mty,
             struct $name { $( $field : $type ),* },
             struct $rname { $( $rfield : $rtype ),* },
-            NoDefaultReader
+            NoDefaultSerialization
         );
         // Default reader implementation here
     };
@@ -92,10 +87,10 @@ macro_rules! command {
         struct $name:ident { $( $field:ident : $type:ty ),* },
         struct $rname:ident { $( $rfield:ident : $rtype:ty ),* },
         // TryFrom<SliceReader> custom implementation that overrides the default one
-        NoDefaultReader
+        NoDefaultSerialization
     ) => {
         #[allow(dead_code)]
-        #[derive(Debug, PartialEq, Clone)]
+        #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
         pub struct $name {
             $( $field: $type ),*
         }
@@ -118,6 +113,17 @@ macro_rules! command {
             $( $rfield: $rtype ),*
         }
     };
+}
+
+pub trait IntoBytes {
+    type Output;
+    fn into_bytes(output: &mut [u8]) -> Self::Output;
+}
+
+#[derive(Debug)]
+pub enum IntoBytesError {
+    InvalidParameter,
+    InvalidLength,
 }
 
 // impl Command {

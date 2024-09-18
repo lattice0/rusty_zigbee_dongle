@@ -5,7 +5,7 @@ use super::{
 use crate::{
     coordinator::CoordinatorError,
     parameters::ParameterValue,
-    serial::SimpleSerial,
+    serial::{simple_serial_port::ToSerial, SimpleSerial},
     subscription::{Action, Predicate, Subscription, SubscriptionService},
     utils::map::MapError,
     zstack::unpi::{LenTypeInfo, MAX_PAYLOAD_SIZE},
@@ -15,42 +15,25 @@ use futures::{
     channel::oneshot::{self, Receiver, Sender},
     lock::Mutex,
 };
+use serde::Serialize;
 use serialport::SerialPort;
 use std::sync::Arc;
 
 // reusable request function
-pub async fn request<R: CommandRequest,S: SimpleSerial<SUnpiPacket>>(
-    command: R,
-    subsystem: Subsystem,
-    parameters: &[(&'static str, ParameterValue)],
+pub async fn request<R: CommandRequest + Serialize, S: SimpleSerial<R>>(
+    command: &R,
     serial: Arc<Mutex<S>>,
 ) -> Result<(), UnpiCommandError> {
-    let packet = SUnpiPacket::from_command_owned(
-        LenTypeInfo::OneByte,
-        (R::message_type(), subsystem),
-        parameters,
-        command,
-    )?;
-    serial.lock().await.write(&packet).await?;
+    serial.lock().await.write(command).await?;
     Ok(())
 }
 
-pub async fn request_with_reply<S: SimpleSerial<SUnpiPacket>>(
-    name: &str,
-    subsystem: Subsystem,
-    parameters: &[(&'static str, ParameterValue)],
+pub async fn request_with_reply<R: CommandRequest + Serialize, S: SimpleSerial<R>>(
+    command: &R,
     serial: Arc<Mutex<S>>,
     subscriptions: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
     timeout: Option<std::time::Duration>,
 ) -> Result<ParametersValueMap, UnpiCommandError> {
-    let command = get_command_by_name(&subsystem, name)
-        .ok_or(UnpiCommandError::NoCommandWithName(name.to_string()))?;
-    let packet = SUnpiPacket::from_command_owned(
-        LenTypeInfo::OneByte,
-        (command.command_type, subsystem),
-        parameters,
-        command,
-    )?;
     let wait = wait_for(
         name,
         MessageType::SRESP,
@@ -123,29 +106,34 @@ where
 
     /// Instantiates a packet from a command and writes it to the serial port
     /// This way we don't have lifetime issues returning the packet referencing the local payload
-    pub fn from_command_to_serial<S: SerialPort + ?Sized>(
+    pub fn from_command_to_serial<R: CommandRequest + Serialize, S: SerialPort + ?Sized>(
         command_id: u8,
-        command: &Command,
+        command: &R,
         parameters: &[(&'static str, ParameterValue)],
         type_subsystem: (MessageType, Subsystem),
         serial: &mut S,
     ) -> Result<(), CoordinatorError> {
         let mut payload_buffer = [0u8; MAX_PAYLOAD_SIZE];
-        let written = command.fill_and_write(parameters, &mut payload_buffer)?;
+        let mut payload_buffer_writer = &mut payload_buffer[..];
+        bincode::serialize_into(payload_buffer_writer, command).unwrap();
+        let written = payload_buffer.len() - payload_buffer_writer.len();
         let payload: &[u8] = &payload_buffer[0..written];
-        let h =
-            UnpiPacket::from_payload((payload, LenTypeInfo::OneByte), type_subsystem, command_id)?;
-        h.to_serial(&mut *serial)?;
-        info!(">>> {:?}", h);
+        // let h =
+        //     UnpiPacket::from_payload((payload, LenTypeInfo::OneByte), type_subsystem, command_id)?;
+        payload.to_serial(&mut *serial)?;
+        info!(">>> {:?}", command);
         Ok(())
     }
 
     /// Instantiates a packet from a command and writes it to the serial port
     /// This way we don't have lifetime issues returning the packet referencing the local payload
     // TODO: in the future maybe use a proper async serial port library?
-    pub async fn from_command_to_serial_async<S: SerialPort + ?Sized>(
+    pub async fn from_command_to_serial_async<
+        R: CommandRequest + Serialize,
+        S: SerialPort + ?Sized,
+    >(
         command_id: u8,
-        command: &Command,
+        command: &R,
         parameters: &[(&'static str, ParameterValue)],
         type_subsystem: (MessageType, Subsystem),
         serial: &mut S,
