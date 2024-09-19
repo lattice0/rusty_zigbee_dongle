@@ -1,5 +1,5 @@
 use super::{
-    nv_memory::nv_memory::NvMemoryAdapter,
+    nv_memory::nv_item::NvMemoryAdapter,
     unpi::{
         commands::{CommandRequest, CommandResponse},
         serial::{request, request_with_reply},
@@ -160,7 +160,7 @@ impl<S: SimpleSerial<SUnpiPacket>> Coordinator for CC253X<S> {
     type IeeAddress = ieee802154::mac::Address;
 
     async fn start(&self) -> Result<(), CoordinatorError> {
-        for attempt in 0..3 {
+        if let Some(attempt) = (0..3).next() {
             trace!("pinging coordinator attempt number {:?}", attempt);
             let _ping: PingResponse = self.request_with_reply(&PingRequest {}, None).await?;
             trace!("ping successful");

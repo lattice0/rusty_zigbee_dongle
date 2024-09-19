@@ -205,10 +205,8 @@ macro_rules! impl_status_if_has_status_field {
             fn try_into(
                 self,
             ) -> Result<$crate::zstack::unpi::constants::CommandStatus, Self::Error> {
-                Ok(
-                    $crate::zstack::unpi::constants::CommandStatus::try_from(self.status)
-                        .map_err(|_| $crate::zstack::unpi::constants::NoCommandStatusError)?,
-                )
+                $crate::zstack::unpi::constants::CommandStatus::try_from(self.status)
+                    .map_err(|_| $crate::zstack::unpi::constants::NoCommandStatusError)
             }
         }
     };

@@ -14,7 +14,7 @@ where
     where
         D: serde::Deserializer<'de>,
     {
-        Ok(deserializer.deserialize_seq(WrapEndianessVisitor::<ENDIANESS, [T; N]>::new())?)
+        deserializer.deserialize_seq(WrapEndianessVisitor::<ENDIANESS, [T; N]>::new())
     }
 }
 
@@ -27,6 +27,12 @@ impl<const ENDIANESS: char, T> WrapEndianessVisitor<ENDIANESS, T> {
         Self {
             marker: std::marker::PhantomData,
         }
+    }
+}
+
+impl<const ENDIANESS: char, T> Default for WrapEndianessVisitor<ENDIANESS, T> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -44,8 +50,8 @@ impl<'a, const ENDIANESS: char, const N: usize, T: Default + Copy + Deserialize<
         A: serde::de::SeqAccess<'a>,
     {
         let mut value = [T::default(); N];
-        for i in 0..N {
-            value[i] = seq
+        for (i, item) in value.iter_mut().enumerate().take(N) {
+            *item = seq
                 .next_element()?
                 .ok_or_else(|| serde::de::Error::invalid_length(i, &self))?;
         }

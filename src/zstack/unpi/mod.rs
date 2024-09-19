@@ -401,6 +401,7 @@ impl<'a> UnpiPacket<&'a [u8]> {
         Ok(UnpiPacket { fcs, ..h })
     }
 
+    #[allow(clippy::needless_borrows_for_generic_args)]
     pub fn from_command<R: CommandRequest + Serialize>(
         mut output: &'a mut [u8],
         command: &R,

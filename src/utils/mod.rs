@@ -1,7 +1,6 @@
 pub mod map;
 pub mod sleep;
 pub mod slice_reader;
-//pub mod slice_writer;
 pub mod wrap_endianess;
 
 #[cfg(not(feature = "log"))]

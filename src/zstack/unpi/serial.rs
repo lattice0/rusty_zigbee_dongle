@@ -46,7 +46,7 @@ pub async fn request_with_reply<
         let mut s = serial.lock().await;
         s.write(packet)
             .await
-            .map_err(|e| UnpiCommandError::Serial(e))
+            .map_err(UnpiCommandError::Serial)
     };
     futures::try_join!(send, wait).map(|(_, packet)| packet.to_command_response())?
 }
@@ -75,7 +75,7 @@ pub async fn wait_for(
         s.subscribe(subscription);
     }
 
-    Ok(rx.await.map_err(|_| UnpiCommandError::SubscriptionError)?)
+    rx.await.map_err(|_| UnpiCommandError::SubscriptionError)
 }
 
 impl<T> UnpiPacket<T>
@@ -97,6 +97,7 @@ where
 
     /// Instantiates a packet from a command and writes it to the serial port
     /// This way we don't have lifetime issues returning the packet referencing the local payload
+    #[allow(clippy::needless_borrows_for_generic_args)]
     pub fn from_command_to_serial<R: CommandRequest + Serialize, S: SerialPort + ?Sized>(
         command: &R,
         serial: &mut S,

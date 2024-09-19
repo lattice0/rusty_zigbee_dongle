@@ -68,7 +68,7 @@ impl<
             .iter_mut()
             .find(|x| matches!(x, Some((k, _)) if k == &key))
         {
-            let old_v: Option<V> = tuple.clone().map(|(_, v)| v);
+            let old_v: Option<V> = tuple.map(|(_, v)| v);
             tuple.replace((key, value));
             Ok(old_v)
         } else if let Some(empty_space) = self.0.iter_mut().find(|x| x.is_none()) {

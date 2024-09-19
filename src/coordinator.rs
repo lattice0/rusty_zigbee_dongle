@@ -2,7 +2,7 @@ use crate::{
     serial::SerialThreadError,
     utils::map::MapError,
     zstack::{
-        nv_memory::nv_memory::NvMemoryAdapterError,
+        nv_memory::nv_item::NvMemoryAdapterError,
         unpi::{
             constants::{CommandStatus, NoCommandStatusError},
             serial::UnpiCommandError,
@@ -79,6 +79,7 @@ pub struct DeviceInfo {
 }
 
 #[derive(Debug, Copy, Clone)]
+#[allow(clippy::type_complexity)]
 pub enum ZigbeeEvent {
     DeviceJoined {
         network_address: u16,

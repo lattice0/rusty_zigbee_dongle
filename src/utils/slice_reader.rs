@@ -3,7 +3,7 @@ use std::io::Read;
 pub struct SliceReader<'a>(pub &'a [u8]);
 
 pub trait ReadWithSliceReader: Sized {
-    fn read_with_slice_reader<'a>(reader: SliceReader<'a>) -> Result<Self, std::io::Error>;
+    fn read_with_slice_reader(reader: SliceReader<'_>) -> Result<Self, std::io::Error>;
 }
 
 #[allow(unused)]
