@@ -23,8 +23,12 @@ use crate::{
         constants::{af, CommandStatus},
         serial::wait_for,
         subsystems::{
-            sys::{PingRequest, PingResponse, ResetRequest},
-            zdo::{StartupFromAppRequest, StartupFromAppResponse, StateChangedIndRequest},
+            sys::{PingRequest, PingResponse, ResetRequest, StackTuneRequest},
+            util::{GetDeviceInfoRequest, GetDeviceInfoResponse, LedControlRequest},
+            zdo::{
+                ExitRouteDiscRequest, ManagementNetworkUpdateRequest, ManagementPermitJoinRequest,
+                StartupFromAppRequest, StartupFromAppResponse, StateChangedIndRequest,
+            },
         },
         MessageType, SUnpiPacket, Subsystem,
     },
@@ -168,13 +172,8 @@ impl<S: SimpleSerial<SUnpiPacket>> Coordinator for CC253X<S> {
             let _ping: PingResponse = self.request_with_reply(&PingRequest {}, None).await?;
             trace!("ping successful");
             let version = self.version().await?;
-            if let Some(version) = version {
-                info!("coordinator version: {:?}", version);
-                return Ok(());
-            } else {
-                error!("no version found");
-                Err(CoordinatorError::CoordinatorOpen)?;
-            }
+            info!("coordinator version: {:?}", version);
+            return Ok(());
         }
         Err(CoordinatorError::CoordinatorOpen)
     }
@@ -188,9 +187,9 @@ impl<S: SimpleSerial<SUnpiPacket>> Coordinator for CC253X<S> {
         false
     }
 
-    async fn version(&self) -> Result<Option<VersionResponse>, CoordinatorError> {
+    async fn version(&self) -> Result<VersionResponse, CoordinatorError> {
         let version: VersionResponse = self.request_with_reply(&VersionRequest {}, None).await?;
-        Ok(Some(version))
+        Ok(version)
     }
 
     async fn reset(&self, reset_type: ResetType) -> Result<(), CoordinatorError> {
@@ -204,72 +203,50 @@ impl<S: SimpleSerial<SUnpiPacket>> Coordinator for CC253X<S> {
         //TODO: const firmwareControlsLed = parseInt(this.version.revision) >= 20211029;
         let firmware_controls_led = true;
 
-        let parameters = match led_status {
+        let command = match led_status {
             LedStatus::Disable => {
                 if firmware_controls_led {
-                    &[
-                        ("led_id", ParameterValue::U8(0xff)),
-                        ("mode", ParameterValue::U8(0)),
-                    ]
+                    LedControlRequest {
+                        led_id: 0xff,
+                        mode: 0,
+                    }
                 } else {
-                    &[
-                        ("led_id", ParameterValue::U8(3)),
-                        ("mode", ParameterValue::U8(0)),
-                    ]
+                    LedControlRequest { led_id: 3, mode: 0 }
                 }
             }
-            LedStatus::On => &[
-                ("led_id", ParameterValue::U8(3)),
-                ("mode", ParameterValue::U8(1)),
-            ],
-            LedStatus::Off => &[
-                ("led_id", ParameterValue::U8(3)),
-                ("mode", ParameterValue::U8(0)),
-            ],
+            LedStatus::On => LedControlRequest { led_id: 3, mode: 1 },
+            LedStatus::Off => LedControlRequest { led_id: 3, mode: 0 },
         };
 
-        self.request("led_control", Subsystem::Util, parameters)
-            .await
+        self.request(&command).await
     }
 
     async fn change_channel(&self, channel: u8) -> Result<(), CoordinatorError> {
         info!("changing channel to {}", channel);
-        let parameters = &[
-            ("destination_address", ParameterValue::U16(0xffff)),
-            (
-                "destination_address_mode",
-                ParameterValue::U16(AddressMode::AddrBroadcast as u16),
-            ),
-            (
-                "channel_mask",
-                ParameterValue::U32(
-                    [channel]
-                        .into_iter()
-                        .reduce(|a, c| a + (1 << c))
-                        .ok_or(CoordinatorError::InvalidChannel)? as u32, //TODO: very likely wrong
-                ),
-            ),
-            ("scan_duration", ParameterValue::U8(0xfe)),
-            ("scan_count", ParameterValue::U8(0)),
-            ("network_manager_address", ParameterValue::U16(0)),
-        ];
 
-        self.request(
-            "management_network_update_request",
-            Subsystem::Zdo,
-            parameters,
-        )
-        .await
+        let command = ManagementNetworkUpdateRequest {
+            destination_address: 0xffff,
+            destination_address_mode: AddressMode::AddrBroadcast as u16,
+            channel_mask: [channel]
+                .into_iter()
+                .reduce(|a, c| a + (1 << c))
+                .ok_or(CoordinatorError::InvalidChannel)? as u32, //TODO: very likely wrong, check this
+            scan_duration: 0xfe,
+            scan_count: 0,
+            network_manager_address: 0,
+        };
+
+        self.request(&command).await
     }
 
     async fn set_transmit_power(&self, power: i8) -> Result<(), CoordinatorError> {
         info!("setting transmit power to {}", power);
-        let parameters = &[
-            ("operation", ParameterValue::U8(0)),
-            ("value", ParameterValue::I8(power)),
-        ];
+        let command = StackTuneRequest {
+            operation: 0,
+            value: power,
+        };
 
-        self.request("stack_tune", Subsystem::Zdo, parameters).await
+        self.request(&command).await
     }
 
     async fn request_network_address(_addr: &str) -> Result<(), CoordinatorError> {
@@ -300,25 +277,17 @@ impl<S: SimpleSerial<SUnpiPacket>> Coordinator for CC253X<S> {
         let address_mode =
             network_address.map_or(AddressMode::AddrBroadcast, |_| AddressMode::Addr16bit);
         let destination_address = network_address.unwrap_or(0xfffc);
-        let parameters = &[
-            ("address_mode", ParameterValue::U16(address_mode as u16)),
-            (
-                "destination_address",
-                ParameterValue::U16(destination_address),
-            ),
-            (
-                "duration",
-                ParameterValue::U8(
-                    seconds
-                        .as_secs()
-                        .try_into()
-                        .map_err(|_| CoordinatorError::DurationTooLong)?,
-                ),
-            ),
-            ("tc_significance", ParameterValue::U8(0)),
-        ];
-        self.request("management_permit_join_request", Subsystem::Zdo, parameters)
-            .await
+        let command = ManagementPermitJoinRequest {
+            address_mode: address_mode as u16,
+            destination_address,
+            duration: seconds
+                .as_secs()
+                .try_into()
+                .map_err(|_| CoordinatorError::DurationTooLong)?,
+            tc_significance: 0,
+        };
+
+        self.request(&command).await
     }
 
     async fn discover_route(
@@ -331,14 +300,14 @@ impl<S: SimpleSerial<SUnpiPacket>> Coordinator for CC253X<S> {
             address,
             wait
         );
-        let parameters = &[
-            ("destination_address", ParameterValue::U16(0)),
-            ("options", ParameterValue::U8(0)),
-            ("radius", ParameterValue::U8(af::DEFAULT_RADIUS)),
-        ];
 
-        self.request("exit_route_disc", Subsystem::Zdo, parameters)
-            .await
+        let command = ExitRouteDiscRequest {
+            destination_address: address.unwrap_or(0),
+            options: 0,
+            radius: af::DEFAULT_RADIUS,
+        };
+
+        self.request(&command).await
     }
 
     async fn set_on_event(&mut self, on_zigbee_event: OnEvent) -> Result<(), CoordinatorError> {
@@ -349,12 +318,11 @@ impl<S: SimpleSerial<SUnpiPacket>> Coordinator for CC253X<S> {
         Ok(())
     }
 
-    async fn device_info(&self) -> Result<DeviceInfo, CoordinatorError> {
+    async fn device_info(&self) -> Result<GetDeviceInfoResponse, CoordinatorError> {
         info!("getting device info...");
-        let device_info: DeviceInfo = self
-            .request_with_reply("get_device_info", Subsystem::Util, &[], None)
-            .await?
-            .try_into()?;
+        let device_info: GetDeviceInfoResponse = self
+            .request_with_reply(&GetDeviceInfoRequest {}, None)
+            .await?;
         Ok(device_info)
     }
 }

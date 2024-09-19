@@ -4,7 +4,10 @@ use crate::{
     parameters::{ParameterError, ParameterValue},
     serial::SerialThreadError,
     utils::map::{MapError, StaticMap},
-    zstack::{nv_memory::nv_memory::NvMemoryAdapterError, unpi::serial::UnpiCommandError},
+    zstack::{
+        nv_memory::nv_memory::NvMemoryAdapterError,
+        unpi::{serial::UnpiCommandError, subsystems::{sys::VersionResponse, util::GetDeviceInfoResponse}},
+    },
 };
 use std::future::Future;
 
@@ -17,7 +20,7 @@ pub trait Coordinator {
 
     fn start(&self) -> impl Future<Output = Result<(), CoordinatorError>>;
     fn stop(&self) -> impl Future<Output = Result<(), CoordinatorError>>;
-    fn version(&self) -> impl Future<Output = Result<Option<ParameterValue>, CoordinatorError>>;
+    fn version(&self) -> impl Future<Output = Result<VersionResponse, CoordinatorError>>;
     fn permit_join(
         &self,
         duration: std::time::Duration,
@@ -59,7 +62,7 @@ pub trait Coordinator {
             }
         }
     }
-    fn device_info(&self) -> impl Future<Output = Result<DeviceInfo, CoordinatorError>>;
+    fn device_info(&self) -> impl Future<Output = Result<GetDeviceInfoResponse, CoordinatorError>>;
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -141,14 +144,14 @@ pub enum AddressMode {
     AddrBroadcast = 15,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum LedStatus {
     Disable,
     On,
     Off,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum ResetType {
     Soft,
     Hard,
