@@ -1,9 +1,12 @@
 use super::{
     nv_memory::nv_memory::NvMemoryAdapter,
     unpi::{
-        commands::CommandRequest,
+        commands::{CommandRequest, CommandResponse},
         serial::{request, request_with_reply},
-        subsystems::zdo::TcDeviceIndexRequest,
+        subsystems::{
+            sys::{VersionRequest, VersionResponse},
+            zdo::TcDeviceIndexRequest,
+        },
     },
 };
 use crate::{
@@ -19,11 +22,15 @@ use crate::{
         commands::{Command, ParametersValueMap},
         constants::{af, CommandStatus},
         serial::wait_for,
+        subsystems::{
+            sys::{PingRequest, PingResponse, ResetRequest},
+            zdo::{StartupFromAppRequest, StartupFromAppResponse, StateChangedIndRequest},
+        },
         MessageType, SUnpiPacket, Subsystem,
     },
 };
 use futures::{executor::block_on, lock::Mutex};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{ops::Deref, sync::Arc};
 
 //TODO: fix this
@@ -80,22 +87,22 @@ impl<S: SimpleSerial<SUnpiPacket>> CC253X<S> {
     // helper proxy function
     pub async fn request<R: CommandRequest + Serialize>(
         &self,
-        name: &str,
         command: &R,
     ) -> Result<(), CoordinatorError> {
-        Ok(request(command, self.serial.clone()).await?)
+        let packet = SUnpiPacket::from_command_owned(super::unpi::LenTypeInfo::OneByte, command)?;
+        Ok(request::<R, S>(&packet, self.serial.clone()).await?)
     }
 
     // helper proxy function
     async fn wait_for(
         &self,
-        name: &str,
+        command_id: u8,
         message_type: MessageType,
         subsystem: Subsystem,
         timeout: Option<std::time::Duration>,
-    ) -> Result<(SUnpiPacket, Command), CoordinatorError> {
+    ) -> Result<SUnpiPacket, CoordinatorError> {
         Ok(wait_for(
-            name,
+            command_id,
             message_type,
             subsystem,
             self.subscriptions.clone(),
@@ -105,17 +112,16 @@ impl<S: SimpleSerial<SUnpiPacket>> CC253X<S> {
     }
 
     // helper proxy function
-    pub async fn request_with_reply(
+    pub async fn request_with_reply<
+        R: CommandRequest + Serialize,
+        Res: CommandResponse + for<'de> Deserialize<'de>,
+    >(
         &self,
-        name: &str,
-        subsystem: Subsystem,
-        parameters: &[(&'static str, ParameterValue)],
+        command: &R,
         timeout: Option<std::time::Duration>,
-    ) -> Result<ParametersValueMap, CoordinatorError> {
-        Ok(request_with_reply(
-            name,
-            subsystem,
-            parameters,
+    ) -> Result<Res, CoordinatorError> {
+        Ok(request_with_reply::<R, S, Res>(
+            &SUnpiPacket::from_command_owned(super::unpi::LenTypeInfo::OneByte, command)?,
             self.serial.clone(),
             self.subscriptions.clone(),
             timeout,
@@ -125,21 +131,19 @@ impl<S: SimpleSerial<SUnpiPacket>> CC253X<S> {
 
     pub async fn begin_startup(&self) -> Result<CommandStatus, CoordinatorError> {
         info!("beginning startup...");
-        let command_name = "state_changed_ind";
-        let command = get_command_by_name(&Subsystem::Zdo, command_name).ok_or(
-            CoordinatorError::NoCommandWithName(command_name.to_string()),
-        )?;
-        let wait = self.wait_for(&command.name, MessageType::AREQ, Subsystem::Zdo, None);
-        let send = self.request(
-            "startup_from_app",
-            Subsystem::Zdo,
-            &[("start_delay", ParameterValue::U16(100))],
-        );
-        let r = futures::try_join!(send, wait).map(|(_, (packet, command))| {
+        let command = StateChangedIndRequest { state: 0 };
+
+        let wait = self.wait_for(command.self_id(), MessageType::AREQ, Subsystem::Zdo, None);
+        let send = self.request(&StartupFromAppRequest {
+            start_delay: 100,
+            status: 0,
+        });
+        let r: StartupFromAppResponse = futures::try_join!(send, wait).map(|(_, packet)| {
             info!("reading filling command: {:?}", command);
-            command.read_and_fill(packet.payload.as_slice())
+            //command.read_and_fill(packet.payload.as_slice());
+            packet.to_command_response()
         })??;
-        let c = TryInto::<CommandStatus>::try_into(r.clone());
+        let c = TryInto::<CommandStatus>::try_into(r.clone())?;
         let r = match c {
             Ok(c) => c,
             Err(_) => {
@@ -161,21 +165,15 @@ impl<S: SimpleSerial<SUnpiPacket>> Coordinator for CC253X<S> {
     async fn start(&self) -> Result<(), CoordinatorError> {
         for attempt in 0..3 {
             trace!("pinging coordinator attempt number {:?}", attempt);
-            let ping = self
-                .request_with_reply("ping", Subsystem::Sys, &[], None)
-                .await?;
-            if ping.get(&"capabilities").is_some() {
-                trace!("ping successful");
-                let version = self.version().await?;
-                if let Some(version) = version {
-                    info!("coordinator version: {:?}", version);
-                    return Ok(());
-                } else {
-                    error!("no version found");
-                    Err(CoordinatorError::CoordinatorOpen)?;
-                }
+            let _ping: PingResponse = self.request_with_reply(&PingRequest {}, None).await?;
+            trace!("ping successful");
+            let version = self.version().await?;
+            if let Some(version) = version {
+                info!("coordinator version: {:?}", version);
+                return Ok(());
             } else {
-                error!("ping failed");
+                error!("no version found");
+                Err(CoordinatorError::CoordinatorOpen)?;
             }
         }
         Err(CoordinatorError::CoordinatorOpen)
@@ -190,21 +188,14 @@ impl<S: SimpleSerial<SUnpiPacket>> Coordinator for CC253X<S> {
         false
     }
 
-    async fn version(&self) -> Result<Option<ParameterValue>, CoordinatorError> {
-        let version = self
-            .request_with_reply("version", Subsystem::Sys, &[], None)
-            .await?;
-        Ok(version.get(&"majorrel").cloned())
+    async fn version(&self) -> Result<Option<VersionResponse>, CoordinatorError> {
+        let version: VersionResponse = self.request_with_reply(&VersionRequest {}, None).await?;
+        Ok(Some(version))
     }
 
     async fn reset(&self, reset_type: ResetType) -> Result<(), CoordinatorError> {
         trace!("reset with reset type {:?}", reset_type);
-        let parameters = match reset_type {
-            ResetType::Soft => &[("type", ParameterValue::U8(1))],
-            ResetType::Hard => &[("type", ParameterValue::U8(0))],
-        };
-        self.request("reset_req", Subsystem::Sys, parameters)
-            .await?;
+        self.request(&ResetRequest { reset_type }).await?;
         Ok::<(), CoordinatorError>(())
     }
 

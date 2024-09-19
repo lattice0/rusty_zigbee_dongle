@@ -1,10 +1,11 @@
 use crate::{
     command,
-    zstack::unpi::{commands::CommandIeeeAddress, MessageType},
+    zstack::unpi::{commands::CommandIeeeAddress, MessageType, Subsystem},
 };
 
 command! {
     54,
+    Subsystem::Zdo,
     MessageType::SREQ,
     struct ManagementPermitJoinRequest {
         address_mode: u16,
@@ -19,6 +20,7 @@ command! {
 
 command! {
     55,
+    Subsystem::Zdo,
     MessageType::SREQ,
     struct ManagementNetworkUpdateRequest {
         destination_address: u16,
@@ -35,6 +37,7 @@ command! {
 
 command! {
     64,
+    Subsystem::Zdo,
     MessageType::SREQ,
     struct StartupFromAppRequest {
         start_delay: u16,
@@ -47,6 +50,7 @@ command! {
 
 command! {
     69,
+    Subsystem::Zdo,
     MessageType::SREQ,
     struct ExitRouteDiscRequest {
         destination_address: u16,
@@ -60,6 +64,7 @@ command! {
 
 command! {
     192,
+    Subsystem::Zdo,
     MessageType::AREQ,
     struct StateChangedIndRequest {
         state: u8
@@ -71,6 +76,7 @@ command! {
 
 command! {
     202,
+    Subsystem::Zdo,
     MessageType::AREQ,
     struct TcDeviceIndexRequest {
         network_address: u16,

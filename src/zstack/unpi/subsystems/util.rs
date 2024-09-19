@@ -1,11 +1,12 @@
 use crate::{
     command,
     //utils::slice_reader::{ReadWithSliceReader, SliceReader},
-    zstack::unpi::{commands::ListU16, MessageType},
+    zstack::unpi::{commands::ListU16, MessageType, Subsystem},
 };
 
 command! {
     0,
+    Subsystem::Util,
     MessageType::SREQ,
     struct GetDeviceInfoRequest {
     },
@@ -48,10 +49,11 @@ command! {
 
 command! {
     10,
+    Subsystem::Util,
     MessageType::SREQ,
     struct LedControlRequest {
         led_id: u8,
-        mode: u8
+         mode: u8
     },
     struct LedControlResponse {
         status: u8

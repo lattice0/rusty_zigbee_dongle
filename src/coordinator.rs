@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::{
     parameters::{ParameterError, ParameterValue},
     serial::SerialThreadError,
@@ -150,6 +152,32 @@ pub enum LedStatus {
 pub enum ResetType {
     Soft,
     Hard,
+}
+
+impl Serialize for ResetType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            ResetType::Soft => serializer.serialize_u8(1),
+            ResetType::Hard => serializer.serialize_u8(0),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ResetType {
+    fn deserialize<D>(deserializer: D) -> Result<ResetType, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = u8::deserialize(deserializer)?;
+        match value {
+            0 => Ok(ResetType::Hard),
+            1 => Ok(ResetType::Soft),
+            _ => Err(serde::de::Error::custom("Invalid reset type")),
+        }
+    }
 }
 
 #[derive(Debug)]

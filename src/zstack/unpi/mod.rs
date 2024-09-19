@@ -1,9 +1,6 @@
-use crate::{
-    parameters::ParameterValue, serial::simple_serial_port::ToSerial,
-    utils::slice_reader::SliceReader,
-};
-use commands::{Command, CommandRequest};
-use serde::Serialize;
+use crate::{serial::simple_serial_port::ToSerial, utils::slice_reader::SliceReader};
+use commands::{CommandRequest, CommandResponse};
+use serde::{Deserialize, Serialize};
 use serial::UnpiCommandError;
 use std::{future::Future, io::Write};
 
@@ -36,6 +33,7 @@ pub struct UnpiPacket<T> {
 pub type Container = Vec<u8>;
 /// Static UNPI packet type
 pub type SUnpiPacket = UnpiPacket<Container>;
+pub type BufferedUnpiPacket = Vec<u8>;
 
 impl ToSerial for SUnpiPacket {
     fn to_serial<W: std::io::Write + ?Sized>(&self, serial: &mut W) -> Result<(), std::io::Error> {
@@ -363,8 +361,6 @@ impl<'a> UnpiPacket<Vec<u8>> {
     //TODO: cfg alloc
     pub fn from_command_owned<R: CommandRequest + Serialize>(
         len_type_info: LenTypeInfo,
-        type_subsystem: (MessageType, Subsystem),
-        //parameters: &[(&'static str, ParameterValue)],
         command: &R,
     ) -> Result<UnpiPacket<Vec<u8>>, UnpiCommandError> {
         let mut payload = Vec::new();
@@ -375,7 +371,7 @@ impl<'a> UnpiPacket<Vec<u8>> {
                 LenTypeInfo::OneByte => LenType::OneByte(payload.len() as u8),
                 LenTypeInfo::TwoByte => LenType::TwoByte(payload.len() as u16),
             },
-            type_subsystem,
+            type_subsystem: (R::message_type(), R::subsystem()),
             command: R::id(),
             payload,
             fcs: 0,
@@ -399,6 +395,24 @@ impl<'a> UnpiPacket<&'a [u8]> {
             type_subsystem,
             command,
             payload,
+            fcs: 0,
+        };
+        let fcs = h.checksum()?;
+        Ok(UnpiPacket { fcs, ..h })
+    }
+
+    pub fn from_command<R: CommandRequest + Serialize>(
+        mut output: &'a mut [u8],
+        command: &R,
+    ) -> Result<UnpiPacket<&'a [u8]>, std::io::Error> {
+        let original_len = output.len();
+        bincode::serialize_into(&mut output, command).unwrap();
+        let written = original_len - output.len();
+        let h = UnpiPacket {
+            len: LenType::OneByte(written as u8),
+            type_subsystem: (R::message_type(), R::subsystem()),
+            command: R::id(),
+            payload: &output[..written],
             fcs: 0,
         };
         let fcs = h.checksum()?;
@@ -451,6 +465,22 @@ where
         let output: &mut [u8] = &mut [0u8; MAX_FRAME_SIZE];
         let len = self.to_bytes(output)?;
         Ok(Self::checksum_buffer(&output[1..(len - 1)]))
+    }
+
+    pub fn to_command_request<'a, R: CommandRequest + Deserialize<'a>>(
+        &'a self,
+    ) -> Result<R, UnpiCommandError> {
+        let command: R =
+            bincode::deserialize(self.payload.as_ref()).map_err(|_| UnpiCommandError::Bincode)?;
+        Ok(command)
+    }
+
+    pub fn to_command_response<'a, R: CommandResponse + Deserialize<'a>>(
+        &'a self,
+    ) -> Result<R, UnpiCommandError> {
+        let command: R =
+            bincode::deserialize(self.payload.as_ref()).map_err(|_| UnpiCommandError::Bincode)?;
+        Ok(command)
     }
 }
 

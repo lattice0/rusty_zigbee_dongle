@@ -1,18 +1,17 @@
 use crate::{
-    command,
-    //utils::slice_writer::SliceWriter,
-    zstack::unpi::{
+    command, coordinator::ResetType, zstack::unpi::{
         buffer::Buffer,
-        commands::{IntoBytes, IntoBytesError},
-        MessageType,
-    },
+        MessageType, Subsystem,
+    }
 };
+
 
 command! {
     0,
+    Subsystem::Sys,
     MessageType::AREQ,
     struct ResetRequest {
-        type_: u8
+        reset_type: ResetType
     },
     struct ResetReqResponse {
     },
@@ -20,6 +19,7 @@ command! {
 
 command! {
     1,
+    Subsystem::Sys,
     MessageType::SREQ,
     struct PingRequest {
     },
@@ -30,6 +30,7 @@ command! {
 
 command! {
     2,
+    Subsystem::Sys,
     MessageType::SREQ,
     struct VersionRequest {
     },
@@ -45,6 +46,7 @@ command! {
 
 command! {
     15,
+    Subsystem::Sys,
     MessageType::SREQ,
     struct StackTuneRequest {
         operation: u8,
@@ -57,6 +59,7 @@ command! {
 
 command! {
     19,
+    Subsystem::Sys,
     MessageType::SREQ,
     struct OsalNvLengthRequest {
         id: u16
@@ -68,6 +71,7 @@ command! {
 
 command! {
     8,
+    Subsystem::Sys,
     MessageType::SREQ,
     struct OsalNvReadRequest {
         id: u16,
@@ -82,6 +86,7 @@ command! {
 
 command! {
     28,
+    Subsystem::Sys,
     MessageType::SREQ,
     struct OsalNvReadExtRequest {
         id: u16,
@@ -96,6 +101,7 @@ command! {
 
 command! {
     29,
+    Subsystem::Sys,
     MessageType::SREQ,
     struct OsalNvWriteRequest {
         id: u16,

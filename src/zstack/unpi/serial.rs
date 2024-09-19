@@ -2,6 +2,7 @@ use super::{
     commands::{Command, CommandRequest, ParametersValueMap},
     MessageType, SUnpiPacket, Subsystem, UnpiPacket,
 };
+use crate::zstack::unpi::commands::CommandResponse;
 use crate::{
     coordinator::CoordinatorError,
     parameters::ParameterValue,
@@ -15,58 +16,61 @@ use futures::{
     channel::oneshot::{self, Receiver, Sender},
     lock::Mutex,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serialport::SerialPort;
 use std::sync::Arc;
 
 // reusable request function
-pub async fn request<R: CommandRequest + Serialize, S: SimpleSerial<R>>(
-    command: &R,
+pub async fn request<R: CommandRequest + Serialize, S: SimpleSerial<SUnpiPacket>>(
+    packet: &SUnpiPacket,
     serial: Arc<Mutex<S>>,
 ) -> Result<(), UnpiCommandError> {
-    serial.lock().await.write(command).await?;
+    serial.lock().await.write(packet).await?;
     Ok(())
 }
 
-pub async fn request_with_reply<R: CommandRequest + Serialize, S: SimpleSerial<R>>(
-    command: &R,
+pub async fn request_with_reply<
+    R: CommandRequest + Serialize,
+    S: SimpleSerial<SUnpiPacket>,
+    Res: CommandResponse + for<'de> Deserialize<'de>,
+>(
+    packet: &SUnpiPacket,
     serial: Arc<Mutex<S>>,
     subscriptions: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
     timeout: Option<std::time::Duration>,
-) -> Result<ParametersValueMap, UnpiCommandError> {
+) -> Result<Res, UnpiCommandError> {
     let wait = wait_for(
-        name,
+        R::Response::id(),
         MessageType::SRESP,
-        subsystem,
+        R::Response::subsystem(),
         subscriptions.clone(),
         timeout,
     );
     let send = async {
         let mut s = serial.lock().await;
-        s.write(&packet)
+        s.write(packet)
             .await
             .map_err(|e| UnpiCommandError::Serial(e))
     };
-    futures::try_join!(send, wait)
-        .map(|(_, (packet, command))| command.read_and_fill(packet.payload.as_slice()))?
+    futures::try_join!(send, wait).map(|(_, packet)| packet.to_command_response())?
 }
 
 // reusable wait_for function
 pub async fn wait_for(
-    name: &str,
+    command_id: u8,
     message_type: MessageType,
     subsystem: Subsystem,
     subscriptions: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
     _timeout: Option<std::time::Duration>,
-) -> Result<(SUnpiPacket, Command), UnpiCommandError> {
-    let command = get_command_by_name(&subsystem, name)
-        .ok_or(UnpiCommandError::NoCommandWithName(name.to_string()))?;
+) -> Result<SUnpiPacket, UnpiCommandError> {
+    // let command = get_command_by_name(&subsystem, name)
+    //     .ok_or(UnpiCommandError::NoCommandWithName(name.to_string()))?;
     let (tx, rx): (Sender<SUnpiPacket>, Receiver<SUnpiPacket>) = oneshot::channel();
     {
         let mut s = subscriptions.lock().await;
         let subscription = Subscription::SingleShot(
             Predicate(Box::new(move |packet: &SUnpiPacket| {
-                packet.type_subsystem == (message_type, subsystem) && packet.command == command.id
+                packet.type_subsystem == (message_type, subsystem) && packet.command == command_id
             })),
             Action(Box::new(move |packet: &SUnpiPacket| {
                 let _ = tx.send(packet.clone());
@@ -74,17 +78,8 @@ pub async fn wait_for(
         );
         s.subscribe(subscription);
     }
-    let mut response_command = command.clone();
-    // We rewrite the command as being a response if it was a request
-    match response_command.command_type {
-        MessageType::AREQ => response_command.command_type = MessageType::AREQ,
-        MessageType::SREQ => response_command.command_type = MessageType::SRESP,
-        _ => return Err(UnpiCommandError::InvalidMessageType),
-    }
-    Ok((
-        rx.await.map_err(|_| UnpiCommandError::SubscriptionError)?,
-        response_command,
-    ))
+
+    Ok(rx.await.map_err(|_| UnpiCommandError::SubscriptionError)?)
 }
 
 impl<T> UnpiPacket<T>
@@ -107,16 +102,14 @@ where
     /// Instantiates a packet from a command and writes it to the serial port
     /// This way we don't have lifetime issues returning the packet referencing the local payload
     pub fn from_command_to_serial<R: CommandRequest + Serialize, S: SerialPort + ?Sized>(
-        command_id: u8,
         command: &R,
-        parameters: &[(&'static str, ParameterValue)],
-        type_subsystem: (MessageType, Subsystem),
         serial: &mut S,
     ) -> Result<(), CoordinatorError> {
         let mut payload_buffer = [0u8; MAX_PAYLOAD_SIZE];
+        let original_payload_len = payload_buffer.len();
         let mut payload_buffer_writer = &mut payload_buffer[..];
-        bincode::serialize_into(payload_buffer_writer, command).unwrap();
-        let written = payload_buffer.len() - payload_buffer_writer.len();
+        bincode::serialize_into(&mut payload_buffer_writer, command).unwrap();
+        let written = original_payload_len - payload_buffer_writer.len();
         let payload: &[u8] = &payload_buffer[0..written];
         // let h =
         //     UnpiPacket::from_payload((payload, LenTypeInfo::OneByte), type_subsystem, command_id)?;
@@ -132,13 +125,10 @@ where
         R: CommandRequest + Serialize,
         S: SerialPort + ?Sized,
     >(
-        command_id: u8,
         command: &R,
-        parameters: &[(&'static str, ParameterValue)],
-        type_subsystem: (MessageType, Subsystem),
         serial: &mut S,
     ) -> Result<(), CoordinatorError> {
-        Self::from_command_to_serial(command_id, command, parameters, type_subsystem, serial)
+        Self::from_command_to_serial(command, serial)
     }
 }
 
@@ -152,6 +142,7 @@ pub enum UnpiCommandError {
     Io(std::io::Error),
     Map(MapError),
     InvalidResponse,
+    Bincode,
 }
 
 impl From<ParameterError> for UnpiCommandError {
