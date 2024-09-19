@@ -2,6 +2,10 @@ use std::io::Read;
 
 pub struct SliceReader<'a>(pub &'a [u8]);
 
+pub trait ReadWithSliceReader: Sized {
+    fn read_with_slice_reader(reader: SliceReader<'_>) -> Result<Self, std::io::Error>;
+}
+
 #[allow(unused)]
 impl<'a> SliceReader<'a> {
     pub fn read_i8(&mut self) -> Result<i8, std::io::Error> {
@@ -71,6 +75,12 @@ impl<'a> SliceReader<'a> {
         ))?;
         self.0 = right;
         Ok(left)
+    }
+
+    pub fn read_as_many_u8<const N: usize>(&mut self) -> Result<([u8; N], usize), std::io::Error> {
+        let mut buffer = [0u8; N];
+        let len = self.0.read(&mut buffer)?;
+        Ok((buffer, len))
     }
 }
 

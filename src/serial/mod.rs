@@ -1,14 +1,13 @@
-use crate::coordinator::CoordinatorError;
 use std::future::Future;
 
 pub mod simple_serial_port;
 
-pub trait SubscriptionSerial<P> {
+pub trait SimpleSerial<P> {
     type Sender;
     type Receiver;
 
-    fn write(&mut self, packet: &P) -> impl Future<Output = Result<(), CoordinatorError>>;
-    fn start(&mut self) -> Result<(), CoordinatorError>;
+    /// Writes to the serial port asynchonously via a channel
+    fn write(&mut self, packet: &P) -> impl Future<Output = Result<(), SerialThreadError>>;
 }
 
 #[derive(Debug, PartialEq)]
@@ -19,4 +18,6 @@ pub enum SerialThreadError {
     MalformedPacket,
     SubscriptionWrite,
     PacketParse,
+    SerialChannelMissing,
+    SerialChannel,
 }

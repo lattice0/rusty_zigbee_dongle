@@ -1,9 +1,8 @@
 use futures::executor::block_on;
 use log::info;
 use rusty_zigbee_dongle::{
-    coordinator::{Coordinator, CoordinatorError, ZigbeeEvent},
-    utils::sleep::sleep_forever,
-    zstack::cc253x::CC253X,
+    coordinator::{Coordinator, CoordinatorError},
+    zstack::{cc253x::CC253X, nv_memory::NvItemId},
 };
 
 fn main() {
@@ -13,37 +12,7 @@ fn main() {
         .init();
 
     let f = async {
-        let mut cc2531 = CC253X::from_simple_serial("/dev/ttyACM2", 115_200)
-            .await
-            .unwrap();
-        cc2531
-            .set_on_event(Box::new(|event| {
-                match event {
-                    ZigbeeEvent::DeviceJoined {
-                        network_address,
-                        ieee_address,
-                    } => {
-                        info!("Device joined: {:?} {:?}", network_address, ieee_address);
-                    }
-                    ZigbeeEvent::DeviceAnnounce {
-                        network_address,
-                        ieee_address,
-                    } => {
-                        info!("Device announce: {:?} {:?}", network_address, ieee_address);
-                    }
-                    ZigbeeEvent::NetworkAddress {
-                        network_address,
-                        ieee_address,
-                    } => {
-                        info!("Network address: {:?} {:?}", network_address, ieee_address);
-                    }
-                    ZigbeeEvent::DeviceLeave(d) => {
-                        info!("Device leave: {:?}", d);
-                    }
-                }
-                #[allow(unreachable_code)]
-                Ok(())
-            }))
+        let cc2531 = CC253X::from_simple_serial("/dev/ttyACM2", 115_200)
             .await
             .unwrap();
 
@@ -58,11 +27,10 @@ fn main() {
             let device_info = cc2531.device_info().await.unwrap();
             info!("device_info: {:?}", device_info);
             cc2531
-                .permit_join(std::time::Duration::from_secs(100), None)
+                .nv_adapter
+                .read_item::<()>(NvItemId::ExtAddr)
                 .await
                 .unwrap();
-            info!("sleeping forever");
-            sleep_forever().await.unwrap();
             Ok::<(), CoordinatorError>(())
         };
         futures::try_join!(b)

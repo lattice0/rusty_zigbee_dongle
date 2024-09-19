@@ -2,7 +2,6 @@ pub mod coordinator;
 pub mod serial;
 pub mod subscription;
 pub mod utils;
-pub mod parameters;
 pub mod zstack;
 
 #[cfg(test)]

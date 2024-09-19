@@ -1,171 +1,229 @@
-use super::{subsystems::SUBSYSTEMS, MessageType, Subsystem};
-use crate::{
-    coordinator::CoordinatorError,
-    parameters::{ParameterType, ParameterValue},
-    utils::{map::StaticMap, slice_reader::SliceReader},
-};
+use super::{MessageType, Subsystem};
+use serde::{Deserialize, Serialize};
 
 pub const MAX_COMMAND_SIZE: usize = 15;
-pub type ParametersValueMap = StaticMap<MAX_COMMAND_SIZE, &'static str, ParameterValue>;
-pub type ParametersTypeMap = StaticMap<MAX_COMMAND_SIZE, &'static str, ParameterType>;
+
+pub trait CommandRequest: std::fmt::Debug {
+    type Response: CommandResponse;
+
+    fn id() -> u8;
+    fn message_type() -> MessageType;
+    fn subsystem() -> Subsystem;
+
+    fn self_id(&self) -> u8;
+    fn self_message_type(&self) -> MessageType;
+    fn self_subsystem(&self) -> Subsystem;
+}
+
+pub trait CommandResponse {
+    fn id() -> u8;
+    fn message_type() -> MessageType;
+    fn subsystem() -> Subsystem;
+    fn self_id(&self) -> u8;
+    fn self_message_type(&self) -> MessageType;
+    fn self_subsystem(&self) -> Subsystem;
+}
 
 #[derive(Debug, PartialEq, Clone)]
-/// Represents a command in the UNPI protocol.
-pub struct Command {
-    pub name: &'static str,
-    pub id: u8,
-    pub command_type: MessageType,
-    pub request: Option<ParametersTypeMap>,
-    pub response: Option<ParametersTypeMap>,
+pub struct ListU16 {
+    pub list: [u16; 255],
+    pub len: usize,
 }
 
-impl Command {
-    /// Fills the buffer with the parameters, failing if one of them isn't supposed to be there
-    pub fn fill_and_write(
-        &self,
-        parameters: &[(&'static str, ParameterValue)],
-        mut output: &mut [u8],
-    ) -> Result<usize, CoordinatorError> {
-        let len = output.len();
-        if let Some(request) = self.request.as_ref() {
-            // Let's fill the values and match against the template in self.request, just for safety
-            parameters.iter().try_for_each(|(name, value)| {
-                // Find parameter in request
-                let parameter_type = request
-                    .get(name)
-                    .ok_or(CoordinatorError::NoCommandWithName(name.to_string()))?;
-                if request.contains_key(name) {
-                    // Only writes if we match the parameter type
-                    let written = value.match_and_write(parameter_type, output)?;
-                    let new_output = std::mem::take(&mut output);
-                    output = &mut new_output[written..];
-                } else {
-                    return Err(CoordinatorError::NoCommandWithName(name.to_string()));
-                }
+//TODO alloc only
+impl Serialize for ListU16 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.list[..self.len].to_vec().serialize(serializer)
+    }
+}
 
-                Ok::<(), CoordinatorError>(())
-            })?;
+//TODO alloc only
+impl<'de> Deserialize<'de> for ListU16 {
+    fn deserialize<D>(deserializer: D) -> Result<ListU16, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let list: Vec<u16> = Vec::deserialize(deserializer)?;
+        let mut arr = [0; 255];
+        for (i, v) in list.iter().enumerate() {
+            arr[i] = *v;
         }
-        Ok(len - output.len())
+        Ok(ListU16 {
+            list: arr,
+            len: list.len(),
+        })
     }
+}
 
-    pub fn read_and_fill(&self, input: &[u8]) -> Result<ParametersValueMap, CoordinatorError> {
-        let mut reader = SliceReader(input);
-        let parameters = match self.name {
-            // Special case for get_device_info, where num_assoc_devices specifies the list length before it comes
-            "get_device_info" => {
-                let mut parameters: ParametersValueMap = Default::default();
-                let status = reader.read_u8()?;
-                let ieee_addr = reader.read_u8_array(8)?;
-                let short_addr = reader.read_u16_le()?;
-                let device_type = reader.read_u8()?;
-                let device_state = reader.read_u8()?;
-                let num_assoc_devices = reader.read_u8()?;
-                let assoc_devices_list = reader.read_u16_array(num_assoc_devices as usize)?;
-                parameters.insert("status", ParameterValue::U8(status))?;
-                parameters.insert("ieee_addr", ParameterValue::IeeAddress(ieee_addr))?;
-                parameters.insert("short_addr", ParameterValue::U16(short_addr))?;
-                parameters.insert("device_type", ParameterValue::U8(device_type))?;
-                parameters.insert("device_state", ParameterValue::U8(device_state))?;
-                parameters.insert("num_assoc_devices", ParameterValue::U8(num_assoc_devices))?;
-                parameters.insert(
-                    "assoc_devices_list",
-                    ParameterValue::ListU16(assoc_devices_list),
-                )?;
-                parameters
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct CommandIeeeAddress {
+    pub ieee_address: [u8; 8],
+}
+
+#[macro_export]
+macro_rules! command {
+    // Match a struct declaration with fields
+    (
+     // command ID
+     $id: literal,
+     // subsystem type (Subsystem::SYS, Subsystem::MAC etc)
+     $sty: expr,
+     // message type (MessageType::SREQ, MessageType::AREQ, MessageType::SRSP etc)
+     $mty: expr,
+     // Request struct with fields
+     struct $name:ident  { $($field:ident : $type:ty ),* },
+     // Response struct with fields
+     struct $rname:ident { $($rfield:ident : $rtype:ty ),* },
+    ) => {
+        command!(
+            $id,
+            $sty,
+            $mty,
+            struct $name { $( $field : $type ),* },
+            struct $rname { $( $rfield : $rtype ),* },
+            WithDefaultSerialization
+        );
+
+    };
+    (
+        $id: literal,
+        $sty: expr,
+        $mty: expr,
+        struct $name:ident { $( $field:ident : $type:ty ),* },
+        struct $rname:ident { $( $rfield:ident : $rtype:ty ),* },
+        // TryFrom<SliceReader> custom implementation that overrides the default one
+        WithDefaultSerialization
+    ) => {
+        command!(
+            $id,
+            $sty,
+            $mty,
+            struct $name { $( $field : $type ),* },
+            struct $rname { $( $rfield : $rtype ),* },
+            NoDefaultSerialization
+        );
+        // Default reader implementation here
+    };
+    (
+        $id: literal,
+        $sty: expr,
+        $mty: expr,
+        struct $name:ident { $( $field:ident : $type:ty ),* },
+        struct $rname:ident { $( $rfield:ident : $rtype:ty ),* },
+        // TryFrom<SliceReader> custom implementation that overrides the default one
+        NoDefaultSerialization
+    ) => {
+        #[allow(dead_code)]
+        #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+        pub struct $name {
+            $(pub $field: $type ),*
+        }
+
+        impl $crate::zstack::unpi::commands::CommandRequest for $name {
+            type Response = $rname;
+
+            fn id() -> u8 {
+                $id
             }
-            _ => {
-                //Asynchronous request
-                if let (Some(request), MessageType::AREQ) = (self.request, self.command_type) {
-                    let mut parameters: ParametersValueMap = Default::default();
-                    request.iter().try_for_each(|(name, parameter_type)| {
-                        let value = parameter_type.from_slice_reader(&mut reader)?;
-                        parameters.insert(name, value)?;
-                        Ok::<(), CoordinatorError>(())
-                    })?;
-                    parameters
-                } else if let (Some(response), MessageType::SRESP) =
-                    (self.response, self.command_type)
-                {
-                    let mut parameters: ParametersValueMap = Default::default();
-                    response.iter().try_for_each(|(name, parameter_type)| {
-                        let value = parameter_type.from_slice_reader(&mut reader)?;
-                        parameters.insert(name, value)?;
-                        Ok::<(), CoordinatorError>(())
-                    })?;
-                    parameters
-                } else {
-                    println!("invalid response, command: {:?}", self);
-                    return Err(CoordinatorError::InvalidResponse);
+
+            fn message_type() -> $crate::zstack::unpi::MessageType {
+                $mty
+            }
+
+            fn subsystem() -> $crate::zstack::unpi::Subsystem {
+                $sty
+            }
+
+            fn self_id(&self) -> u8 {
+                Self::id()
+            }
+
+            fn self_message_type(&self) -> $crate::zstack::unpi::MessageType {
+                Self::message_type()
+            }
+
+            fn self_subsystem(&self) -> $crate::zstack::unpi::Subsystem {
+                Self::subsystem()
+            }
+        }
+
+        #[allow(dead_code)]
+        #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+        pub struct $rname {
+            $(pub $rfield: $rtype ,)*
+        }
+
+        impl $crate::zstack::unpi::commands::CommandResponse for $rname {
+            fn message_type() -> $crate::zstack::unpi::MessageType {
+                match $mty {
+                    $crate::zstack::unpi::MessageType::SREQ => $crate::zstack::unpi::MessageType::SRESP,
+                    $crate::zstack::unpi::MessageType::AREQ => $crate::zstack::unpi::MessageType::SREQ,
+                    _ => $mty
                 }
             }
-        };
-        Ok(parameters)
-    }
+
+            fn id() -> u8 {
+                $id
+            }
+
+            fn subsystem() -> $crate::zstack::unpi::Subsystem {
+                $sty
+            }
+
+            fn self_id(&self) -> u8 {
+                Self::id()
+            }
+
+            fn self_message_type(&self) -> $crate::zstack::unpi::MessageType {
+                Self::message_type()
+            }
+
+            fn self_subsystem(&self) -> $crate::zstack::unpi::Subsystem {
+                Self::subsystem()
+            }
+        }
+
+        $crate::impl_status_if_has_status_field! { struct $rname { $( $rfield : $rtype ),* } }
+    };
 }
 
-/// Get a command by name, linear (kinda slow) search over the static slice
-pub fn get_command_by_name(subsystem: &Subsystem, name: &str) -> Option<&'static Command> {
-    SUBSYSTEMS
-        .iter()
-        .find(|(s, _)| s == subsystem)
-        .and_then(|(_, cmds)| cmds.iter().find(|c| c.name == name))
+// If the response struct has a field named `status`, implement TryInto<CommandStatus> for it
+#[macro_export]
+macro_rules! impl_status_if_has_status_field {
+    (
+        struct $name:ident {
+            status: $status_type:ty $(, $($rest:tt)*)?
+        }
+    ) => {
+        #[allow(dead_code)]
+        impl TryInto<$crate::zstack::unpi::constants::CommandStatus> for $name {
+            type Error = $crate::zstack::unpi::constants::NoCommandStatusError;
+
+            fn try_into(
+                self,
+            ) -> Result<$crate::zstack::unpi::constants::CommandStatus, Self::Error> {
+                $crate::zstack::unpi::constants::CommandStatus::try_from(self.status)
+                    .map_err(|_| $crate::zstack::unpi::constants::NoCommandStatusError)
+            }
+        }
+    };
+    (
+        struct $name:ident {
+            $($field:ident : $type:ty),*
+        }
+    ) => {};
 }
 
-/// Get a command by name, linear (kinda slow) search over the static slice
-pub fn get_command_by_id(subsystem: &Subsystem, id: u8) -> Option<&'static Command> {
-    SUBSYSTEMS
-        .iter()
-        .find(|(s, _)| s == subsystem)
-        .and_then(|(_, cmds)| cmds.iter().find(|c| c.id == id))
+pub trait IntoBytes {
+    type Output;
+    fn into_bytes(output: &mut [u8]) -> Self::Output;
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_get_command_by_name() {
-        assert!(matches!(
-            get_command_by_name(&Subsystem::Util, "led_control"),
-            Some(Command {
-                name: "led_control",
-                ..
-            })
-        ));
-        assert!(matches!(
-            get_command_by_name(&Subsystem::Util, "not_found"),
-            None
-        ));
-    }
-
-    #[test]
-    fn test_get_command_by_id() {
-        assert!(matches!(
-            get_command_by_id(&Subsystem::Util, 10),
-            Some(Command {
-                name: "led_control",
-                id: 10,
-                ..
-            })
-        ));
-        assert!(matches!(get_command_by_id(&Subsystem::Util, 11), None));
-    }
-
-    #[test]
-    fn test_command() {
-        let command = get_command_by_name(&Subsystem::Util, "led_control").unwrap();
-        let mut buffer = [0; 255];
-        let len = command
-            .fill_and_write(
-                &[
-                    ("led_id", ParameterValue::U8(1)),
-                    ("mode", ParameterValue::U8(1)),
-                ],
-                &mut buffer,
-            )
-            .unwrap();
-        assert_eq!(len, 2);
-        assert_eq!(&buffer[0..len], [1, 1]);
-    }
+#[derive(Debug)]
+pub enum IntoBytesError {
+    InvalidParameter,
+    InvalidLength,
 }

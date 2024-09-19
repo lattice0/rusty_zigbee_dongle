@@ -1,7 +1,16 @@
 use crate::{
-    parameters::{ParameterError, ParameterValue},
-    utils::map::{MapError, StaticMap}, zstack::{nv_memory::nv_memory::NvMemoryAdapterError, unpi::serial::UnpiCommandError},
+    serial::SerialThreadError,
+    utils::map::MapError,
+    zstack::{
+        nv_memory::nv_item::NvMemoryAdapterError,
+        unpi::{
+            constants::{CommandStatus, NoCommandStatusError},
+            serial::UnpiCommandError,
+            subsystems::{sys::VersionResponse, util::GetDeviceInfoResponse},
+        },
+    },
 };
+use serde::{Deserialize, Serialize};
 use std::future::Future;
 
 pub type OnEvent = Box<dyn Fn(ZigbeeEvent) -> Result<(), CoordinatorError> + Send + Sync>;
@@ -13,7 +22,7 @@ pub trait Coordinator {
 
     fn start(&self) -> impl Future<Output = Result<(), CoordinatorError>>;
     fn stop(&self) -> impl Future<Output = Result<(), CoordinatorError>>;
-    fn version(&self) -> impl Future<Output = Result<Option<ParameterValue>, CoordinatorError>>;
+    fn version(&self) -> impl Future<Output = Result<VersionResponse, CoordinatorError>>;
     fn permit_join(
         &self,
         duration: std::time::Duration,
@@ -55,7 +64,7 @@ pub trait Coordinator {
             }
         }
     }
-    fn device_info(&self) -> impl Future<Output = Result<DeviceInfo, CoordinatorError>>;
+    fn device_info(&self) -> impl Future<Output = Result<GetDeviceInfoResponse, CoordinatorError>>;
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -69,44 +78,8 @@ pub struct DeviceInfo {
     pub assoc_devices_list: [u16; 16],
 }
 
-impl TryFrom<StaticMap<15, &'static str, ParameterValue>> for DeviceInfo {
-    type Error = CoordinatorError;
-
-    fn try_from(map: StaticMap<15, &'static str, ParameterValue>) -> Result<Self, Self::Error> {
-        Ok(DeviceInfo {
-            status: map
-                .get(&"status")
-                .ok_or(CoordinatorError::MissingKey)?
-                .try_into_u8()?,
-            ieee_addr: map
-                .get(&"ieee_addr")
-                .ok_or(CoordinatorError::MissingKey)?
-                .try_into_ieee_addr()?,
-            short_addr: map
-                .get(&"short_addr")
-                .ok_or(CoordinatorError::MissingKey)?
-                .try_into_u16()?,
-            device_type: map
-                .get(&"device_type")
-                .ok_or(CoordinatorError::MissingKey)?
-                .try_into_u8()?,
-            device_state: map
-                .get(&"device_state")
-                .ok_or(CoordinatorError::MissingKey)?
-                .try_into_u8()?,
-            num_assoc_devices: map
-                .get(&"num_assoc_devices")
-                .ok_or(CoordinatorError::MissingKey)?
-                .try_into_u8()?,
-            assoc_devices_list: map
-                .get(&"assoc_devices_list")
-                .ok_or(CoordinatorError::MissingKey)?
-                .try_into_list_u16()?,
-        })
-    }
-}
-
 #[derive(Debug, Copy, Clone)]
+#[allow(clippy::type_complexity)]
 pub enum ZigbeeEvent {
     DeviceJoined {
         network_address: u16,
@@ -137,27 +110,53 @@ pub enum AddressMode {
     AddrBroadcast = 15,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum LedStatus {
     Disable,
     On,
     Off,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum ResetType {
     Soft,
     Hard,
 }
 
+impl Serialize for ResetType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            ResetType::Soft => serializer.serialize_u8(1),
+            ResetType::Hard => serializer.serialize_u8(0),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ResetType {
+    fn deserialize<D>(deserializer: D) -> Result<ResetType, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = u8::deserialize(deserializer)?;
+        match value {
+            0 => Ok(ResetType::Hard),
+            1 => Ok(ResetType::Soft),
+            _ => Err(serde::de::Error::custom("Invalid reset type")),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum CoordinatorError {
     SerialOpen(String),
+    Serial(SerialThreadError),
     SerialWrite,
     SerialRead,
     NoCommandWithName(String),
     Io(String),
-    Parameter(ParameterError),
     InvalidChannel,
     ResponseMismatch,
     Map(MapError),
@@ -174,7 +173,9 @@ pub enum CoordinatorError {
     InvalidResponse,
     InvalidMessageType,
     NvMemoryAdapter(NvMemoryAdapterError),
-    UnpiCommand(UnpiCommandError)
+    UnpiCommand(UnpiCommandError),
+    CommandStatusFailure(CommandStatus),
+    NoCommandStatus(NoCommandStatusError),
 }
 
 impl From<std::io::Error> for CoordinatorError {
@@ -182,7 +183,6 @@ impl From<std::io::Error> for CoordinatorError {
         CoordinatorError::Io(e.to_string())
     }
 }
-
 
 impl From<MapError> for CoordinatorError {
     fn from(e: MapError) -> Self {
@@ -199,5 +199,11 @@ impl From<NvMemoryAdapterError> for CoordinatorError {
 impl From<UnpiCommandError> for CoordinatorError {
     fn from(e: UnpiCommandError) -> Self {
         CoordinatorError::UnpiCommand(e)
+    }
+}
+
+impl From<NoCommandStatusError> for CoordinatorError {
+    fn from(e: NoCommandStatusError) -> Self {
+        CoordinatorError::NoCommandStatus(e)
     }
 }

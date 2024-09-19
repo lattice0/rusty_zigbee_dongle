@@ -1,4 +1,4 @@
-use super::{SerialThreadError, SubscriptionSerial};
+use super::{SerialThreadError, SimpleSerial};
 use crate::{
     coordinator::CoordinatorError,
     subscription::SubscriptionService,
@@ -25,25 +25,6 @@ pub struct SimpleSerialPort<P> {
     subscription_service: Arc<Mutex<SubscriptionService<P>>>,
 }
 
-impl<P> SimpleSerialPort<P> {
-    pub fn new(
-        path: &str,
-        baud_rate: u32,
-        subscription_service: Arc<Mutex<SubscriptionService<P>>>,
-    ) -> Result<Self, CoordinatorError> {
-        let to_serial = mpsc::channel(20);
-        let to_serial = (Some(to_serial.0), Some(to_serial.1));
-        Ok(SimpleSerialPort {
-            path: path.to_string(),
-            baud_rate,
-            to_serial,
-            read_thread: None,
-            write_thread: None,
-            subscription_service,
-        })
-    }
-}
-
 impl<
         P: for<'a> TryFrom<&'a [u8]>
             + ToOwned<Owned = P>
@@ -53,10 +34,26 @@ impl<
             + Clone
             + Send
             + 'static,
-    > SubscriptionSerial<P> for SimpleSerialPort<P>
+    > SimpleSerialPort<P>
 {
-    type Sender = Sender<P>;
-    type Receiver = Receiver<P>;
+    pub fn new(
+        path: &str,
+        baud_rate: u32,
+        subscription_service: Arc<Mutex<SubscriptionService<P>>>,
+    ) -> Result<Self, CoordinatorError> {
+        let to_serial = mpsc::channel(20);
+        let to_serial = (Some(to_serial.0), Some(to_serial.1));
+        let mut s = SimpleSerialPort {
+            path: path.to_string(),
+            baud_rate,
+            to_serial,
+            read_thread: None,
+            write_thread: None,
+            subscription_service,
+        };
+        s.start()?;
+        Ok(s)
+    }
 
     fn start(&mut self) -> Result<(), CoordinatorError> {
         let mut read = serialport::new(self.path.clone(), self.baud_rate)
@@ -115,16 +112,21 @@ impl<
         }));
         Ok(())
     }
+}
 
-    async fn write(&mut self, packet: &P) -> Result<(), CoordinatorError> {
+impl<P: Clone> SimpleSerial<P> for SimpleSerialPort<P> {
+    type Sender = Sender<P>;
+    type Receiver = Receiver<P>;
+
+    async fn write(&mut self, packet: &P) -> Result<(), SerialThreadError> {
         let tx = self
             .to_serial
             .0
             .as_mut()
-            .ok_or(CoordinatorError::SerialChannelMissing)?;
+            .ok_or(SerialThreadError::SerialChannelMissing)?;
         tx.send(packet.clone())
             .await
-            .map_err(|_e| CoordinatorError::SerialWrite)
+            .map_err(|_e| SerialThreadError::SerialChannel)
     }
 }
 

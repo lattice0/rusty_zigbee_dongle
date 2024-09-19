@@ -11,7 +11,7 @@ impl<const N: usize, K: Copy + 'static, V: Copy + 'static> Default for StaticMap
 
 impl<
         const N: usize,
-        K: PartialEq + Copy + Clone + 'static,
+        K: PartialEq + Clone + Copy + 'static,
         V: PartialEq + Copy + Clone + 'static,
     > StaticMap<N, K, V>
 {

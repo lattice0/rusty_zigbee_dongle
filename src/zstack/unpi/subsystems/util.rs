@@ -1,31 +1,61 @@
 use crate::{
-    parameters::ParameterType, utils::map::StaticMap, zstack::unpi::{commands::Command, MessageType}
+    command,
+    //utils::slice_reader::{ReadWithSliceReader, SliceReader},
+    zstack::unpi::{commands::ListU16, MessageType, Subsystem},
 };
 
-pub const COMMANDS_UTIL: &[Command] = &[
-    Command {
-        name: "get_device_info",
-        id: 0,
-        command_type: MessageType::SREQ,
-        request: None,
-        response: Some(StaticMap::new(&[
-            ("status", ParameterType::U8),
-            ("ieee_addr", ParameterType::IeeeAddress),
-            ("short_addr", ParameterType::U16),
-            ("device_type", ParameterType::U8),
-            ("device_state", ParameterType::U8),
-            ("num_assoc_devices", ParameterType::U8),
-            ("assoc_devices_list", ParameterType::ListU16(None)),
-        ])),
+command! {
+    0,
+    Subsystem::Util,
+    MessageType::SREQ,
+    struct GetDeviceInfoRequest {
     },
-    Command {
-        name: "led_control",
-        id: 10,
-        command_type: MessageType::SREQ,
-        request: Some(StaticMap::new(&[
-            ("led_id", ParameterType::U8),
-            ("mode", ParameterType::U8),
-        ])),
-        response: Some(StaticMap::new(&[("status", ParameterType::U8)])),
+    struct GetDeviceInfoResponse {
+        status: u8,
+        ieee_addr: [u8; 8],
+        short_addr: u16,
+        device_type: u8,
+        device_state: u8,
+        num_assoc_devices: u8,
+        assoc_devices_list: ListU16
     },
-];
+    NoDefaultSerialization
+}
+
+// impl<'a> ReadWithSliceReader for GetDeviceInfoResponse {
+//     fn read_with_slice_reader<'b>(reader: SliceReader<'b>) -> Result<Self, std::io::Error> {
+//         let mut reader = reader;
+//         let status = reader.read_u8()?;
+//         let ieee_addr: [u8; 8] = reader.read_u8_array(8)?;
+//         let short_addr = reader.read_u16_le()?;
+//         let device_type = reader.read_u8()?;
+//         let device_state = reader.read_u8()?;
+//         let num_assoc_devices = reader.read_u8()?;
+//         let assoc_devices_list = reader.read_u16_array(num_assoc_devices as usize)?;
+//         Ok(GetDeviceInfoResponse {
+//             status,
+//             ieee_addr,
+//             short_addr,
+//             device_type,
+//             device_state,
+//             num_assoc_devices,
+//             assoc_devices_list: ListU16 {
+//                 list: assoc_devices_list,
+//                 len: num_assoc_devices as usize,
+//             },
+//         })
+//     }
+// }
+
+command! {
+    10,
+    Subsystem::Util,
+    MessageType::SREQ,
+    struct LedControlRequest {
+        led_id: u8,
+         mode: u8
+    },
+    struct LedControlResponse {
+        status: u8
+    },
+}
