@@ -211,8 +211,7 @@ macro_rules! command {
 macro_rules! impl_status_if_has_status_field {
     (
         struct $name:ident {
-            status: $status_type:ty,
-            $($rest:tt)*
+            status: $status_type:ty $(, $($rest:tt)*)?
         }
     ) => {
         #[allow(dead_code)]
@@ -233,15 +232,7 @@ macro_rules! impl_status_if_has_status_field {
         struct $name:ident {
             $($field:ident : $type:ty),*
         }
-    ) => {
-        impl TryInto<()> for $name {
-            type Error = ();
-
-            fn try_into(self) -> Result<(), Self::Error> {
-                Ok(())
-            }
-        }
-    };
+    ) => {};
 }
 
 pub trait IntoBytes {

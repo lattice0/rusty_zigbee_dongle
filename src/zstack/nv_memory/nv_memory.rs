@@ -66,15 +66,16 @@ impl<S: SimpleSerial<SUnpiPacket>> NvMemoryAdapter<S> {
         parameters: &[(&'static str, ParameterValue)],
         timeout: Option<std::time::Duration>,
     ) -> Result<ParametersValueMap, NvMemoryAdapterError> {
-        Ok(request_with_reply(
-            name,
-            subsystem,
-            parameters,
-            self.serial.clone(),
-            self.subscriptions.clone(),
-            timeout,
-        )
-        .await?)
+        // Ok(request_with_reply(
+        //     name,
+        //     subsystem,
+        //     parameters,
+        //     self.serial.clone(),
+        //     self.subscriptions.clone(),
+        //     timeout,
+        // )
+        // .await?)
+        todo!()
     }
 
     pub async fn read_item<I: TryInto<NvItem>>(

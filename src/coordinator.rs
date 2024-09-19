@@ -6,10 +6,10 @@ use crate::{
     utils::map::{MapError, StaticMap},
     zstack::{
         nv_memory::nv_memory::NvMemoryAdapterError,
-        unpi::{serial::UnpiCommandError, subsystems::{sys::VersionResponse, util::GetDeviceInfoResponse}},
+        unpi::{constants::{CommandStatus, NoCommandStatusError}, serial::UnpiCommandError, subsystems::{sys::VersionResponse, util::GetDeviceInfoResponse}},
     },
 };
-use std::future::Future;
+use std::{future::Future, process::Command};
 
 pub type OnEvent = Box<dyn Fn(ZigbeeEvent) -> Result<(), CoordinatorError> + Send + Sync>;
 
@@ -209,6 +209,8 @@ pub enum CoordinatorError {
     InvalidMessageType,
     NvMemoryAdapter(NvMemoryAdapterError),
     UnpiCommand(UnpiCommandError),
+    CommandStatusFailure(CommandStatus),
+    NoCommandStatus(NoCommandStatusError)
 }
 
 impl From<std::io::Error> for CoordinatorError {
@@ -232,5 +234,11 @@ impl From<NvMemoryAdapterError> for CoordinatorError {
 impl From<UnpiCommandError> for CoordinatorError {
     fn from(e: UnpiCommandError) -> Self {
         CoordinatorError::UnpiCommand(e)
+    }
+}
+
+impl From<NoCommandStatusError> for CoordinatorError {
+    fn from(e: NoCommandStatusError) -> Self {
+        CoordinatorError::NoCommandStatus(e)
     }
 }

@@ -133,7 +133,7 @@ impl<S: SimpleSerial<SUnpiPacket>> CC253X<S> {
         .await?)
     }
 
-    pub async fn begin_startup(&self) -> Result<CommandStatus, CoordinatorError> {
+    pub async fn begin_startup(&self) -> Result<StartupFromAppResponse, CoordinatorError> {
         info!("beginning startup...");
         let command = StateChangedIndRequest { state: 0 };
 
@@ -148,13 +148,9 @@ impl<S: SimpleSerial<SUnpiPacket>> CC253X<S> {
             packet.to_command_response()
         })??;
         let c = TryInto::<CommandStatus>::try_into(r.clone())?;
-        let r = match c {
-            Ok(c) => c,
-            Err(_) => {
-                error!("error converting to CommandStatus: {:?}", r);
-                return Err(CoordinatorError::InvalidCommandStatus);
-            }
-        };
+        if c != CommandStatus::Success {
+            return Err(CoordinatorError::CommandStatusFailure(c));
+        }
         Ok(r)
     }
 }
