@@ -1,10 +1,8 @@
 use crate::{
-    command, coordinator::ResetType, zstack::unpi::{
-        buffer::Buffer,
-        MessageType, Subsystem,
-    }
+    command,
+    coordinator::ResetType,
+    zstack::unpi::{buffer::Buffer, MessageType, Subsystem},
 };
-
 
 command! {
     0,

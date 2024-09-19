@@ -20,9 +20,13 @@ fn main() {
         let a = async {
             loop {
                 cc2531.set_led(LedStatus::On).await.unwrap();
-                async_delay(std::time::Duration::from_secs(1)).await.unwrap();
+                async_delay(std::time::Duration::from_secs(1))
+                    .await
+                    .unwrap();
                 cc2531.set_led(LedStatus::Off).await.unwrap();
-                async_delay(std::time::Duration::from_secs(1)).await.unwrap();
+                async_delay(std::time::Duration::from_secs(1))
+                    .await
+                    .unwrap();
             }
             Ok::<(), CoordinatorError>(())
         };

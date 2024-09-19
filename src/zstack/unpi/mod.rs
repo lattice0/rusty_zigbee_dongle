@@ -628,5 +628,3 @@ mod tests {
         assert_eq!(packet.checksum().unwrap(), 0x92);
     }
 }
-
-
