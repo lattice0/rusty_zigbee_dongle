@@ -1,15 +1,18 @@
-use serde::{Deserialize, Serialize};
-
 use crate::{
     parameters::{ParameterError, ParameterValue},
     serial::SerialThreadError,
     utils::map::{MapError, StaticMap},
     zstack::{
         nv_memory::nv_memory::NvMemoryAdapterError,
-        unpi::{constants::{CommandStatus, NoCommandStatusError}, serial::UnpiCommandError, subsystems::{sys::VersionResponse, util::GetDeviceInfoResponse}},
+        unpi::{
+            constants::{CommandStatus, NoCommandStatusError},
+            serial::UnpiCommandError,
+            subsystems::{sys::VersionResponse, util::GetDeviceInfoResponse},
+        },
     },
 };
-use std::{future::Future, process::Command};
+use serde::{Deserialize, Serialize};
+use std::future::Future;
 
 pub type OnEvent = Box<dyn Fn(ZigbeeEvent) -> Result<(), CoordinatorError> + Send + Sync>;
 
@@ -210,7 +213,7 @@ pub enum CoordinatorError {
     NvMemoryAdapter(NvMemoryAdapterError),
     UnpiCommand(UnpiCommandError),
     CommandStatusFailure(CommandStatus),
-    NoCommandStatus(NoCommandStatusError)
+    NoCommandStatus(NoCommandStatusError),
 }
 
 impl From<std::io::Error> for CoordinatorError {

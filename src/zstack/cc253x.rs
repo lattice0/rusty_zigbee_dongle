@@ -11,15 +11,12 @@ use super::{
 };
 use crate::{
     coordinator::{
-        AddressMode, Coordinator, CoordinatorError, DeviceInfo, LedStatus, OnEvent, ResetType,
-        ZigbeeEvent,
+        AddressMode, Coordinator, CoordinatorError, LedStatus, OnEvent, ResetType, ZigbeeEvent,
     },
-    parameters::ParameterValue,
     serial::{simple_serial_port::SimpleSerialPort, SimpleSerial},
     subscription::{Event, Predicate, Subscription, SubscriptionService},
-    utils::{error, info, trace, warn},
+    utils::{info, trace, warn},
     zstack::unpi::{
-        commands::{Command, ParametersValueMap},
         constants::{af, CommandStatus},
         serial::wait_for,
         subsystems::{

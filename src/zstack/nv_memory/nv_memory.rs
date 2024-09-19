@@ -4,17 +4,15 @@ use crate::{
     serial::SimpleSerial,
     subscription::SubscriptionService,
     zstack::unpi::{
-        commands::ParametersValueMap,
-        serial::{request_with_reply, UnpiCommandError},
-        SUnpiPacket, Subsystem,
+        commands::ParametersValueMap, serial::UnpiCommandError, SUnpiPacket, Subsystem,
     },
 };
 use futures::lock::Mutex;
 use std::sync::Arc;
 
 pub struct NvMemoryAdapter<S: SimpleSerial<SUnpiPacket>> {
-    serial: Arc<Mutex<S>>,
-    subscriptions: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
+    _serial: Arc<Mutex<S>>,
+    _subscriptions: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
 }
 
 impl<S: SimpleSerial<SUnpiPacket>> NvMemoryAdapter<S> {
@@ -23,8 +21,8 @@ impl<S: SimpleSerial<SUnpiPacket>> NvMemoryAdapter<S> {
         subscriptions: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
     ) -> Result<Self, NvMemoryAdapterError> {
         Ok(NvMemoryAdapter {
-            serial,
-            subscriptions,
+            _serial: serial,
+            _subscriptions: subscriptions,
         })
     }
 
@@ -61,10 +59,10 @@ impl<S: SimpleSerial<SUnpiPacket>> NvMemoryAdapter<S> {
     // helper proxy function
     async fn request_with_reply(
         &self,
-        name: &str,
-        subsystem: Subsystem,
-        parameters: &[(&'static str, ParameterValue)],
-        timeout: Option<std::time::Duration>,
+        _name: &str,
+        _subsystem: Subsystem,
+        _parameters: &[(&'static str, ParameterValue)],
+        _timeout: Option<std::time::Duration>,
     ) -> Result<ParametersValueMap, NvMemoryAdapterError> {
         // Ok(request_with_reply(
         //     name,

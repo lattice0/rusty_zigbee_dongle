@@ -1,15 +1,11 @@
-use super::{
-    commands::{Command, CommandRequest, ParametersValueMap},
-    MessageType, SUnpiPacket, Subsystem, UnpiPacket,
-};
+use super::{commands::CommandRequest, MessageType, SUnpiPacket, Subsystem, UnpiPacket};
 use crate::zstack::unpi::commands::CommandResponse;
 use crate::{
     coordinator::CoordinatorError,
-    parameters::ParameterValue,
     serial::{simple_serial_port::ToSerial, SimpleSerial},
     subscription::{Action, Predicate, Subscription, SubscriptionService},
     utils::map::MapError,
-    zstack::unpi::{LenTypeInfo, MAX_PAYLOAD_SIZE},
+    zstack::unpi::MAX_PAYLOAD_SIZE,
 };
 use crate::{parameters::ParameterError, serial::SerialThreadError, utils::info};
 use futures::{
