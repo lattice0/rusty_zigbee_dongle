@@ -1,5 +1,4 @@
 pub mod coordinator;
-pub mod parameters;
 pub mod serial;
 pub mod subscription;
 pub mod utils;

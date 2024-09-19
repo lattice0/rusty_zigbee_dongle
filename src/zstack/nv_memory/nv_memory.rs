@@ -1,18 +1,26 @@
 use super::NvItemId;
+use crate::zstack::unpi::serial::{request, request_with_reply};
+use crate::zstack::unpi::subsystems::sys::{
+    OsalNvLengthResponse, OsalNvReadRequest, OsalNvReadResponse,
+};
+use crate::zstack::unpi::LenTypeInfo;
 use crate::{
-    parameters::ParameterValue,
     serial::SimpleSerial,
     subscription::SubscriptionService,
     zstack::unpi::{
-        commands::ParametersValueMap, serial::UnpiCommandError, SUnpiPacket, Subsystem,
+        commands::{CommandRequest, CommandResponse},
+        serial::UnpiCommandError,
+        subsystems::sys::OsalNvLengthRequest,
+        SUnpiPacket,
     },
 };
 use futures::lock::Mutex;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 pub struct NvMemoryAdapter<S: SimpleSerial<SUnpiPacket>> {
-    _serial: Arc<Mutex<S>>,
-    _subscriptions: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
+    serial: Arc<Mutex<S>>,
+    subscriptions: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
 }
 
 impl<S: SimpleSerial<SUnpiPacket>> NvMemoryAdapter<S> {
@@ -21,21 +29,30 @@ impl<S: SimpleSerial<SUnpiPacket>> NvMemoryAdapter<S> {
         subscriptions: Arc<Mutex<SubscriptionService<SUnpiPacket>>>,
     ) -> Result<Self, NvMemoryAdapterError> {
         Ok(NvMemoryAdapter {
-            _serial: serial,
-            _subscriptions: subscriptions,
+            serial,
+            subscriptions,
         })
+    }
+
+    // helper proxy function
+    pub async fn request<R: CommandRequest + Serialize>(
+        &self,
+        command: &R,
+    ) -> Result<(), NvMemoryAdapterError> {
+        let packet = SUnpiPacket::from_command_owned(LenTypeInfo::OneByte, command)?;
+        Ok(request::<R, S>(&packet, self.serial.clone()).await?)
     }
 
     // // helper proxy function
     // async fn wait_for(
     //     &self,
-    //     name: &str,
+    //     command_id: u8,
     //     message_type: MessageType,
     //     subsystem: Subsystem,
     //     timeout: Option<std::time::Duration>,
-    // ) -> Result<(SUnpiPacket, Command), NvMemoryAdapterError> {
+    // ) -> Result<SUnpiPacket, NvMemoryAdapterError> {
     //     Ok(wait_for(
-    //         name,
+    //         command_id,
     //         message_type,
     //         subsystem,
     //         self.subscriptions.clone(),
@@ -44,76 +61,42 @@ impl<S: SimpleSerial<SUnpiPacket>> NvMemoryAdapter<S> {
     //     .await?)
     // }
 
-    // // helper proxy function
-    // async fn request(
-    //     &self,
-    //     name: &str,
-    //     subsystem: Subsystem,
-    //     parameters: &[(&'static str, ParameterValue)],
-    //     _timeout: Option<std::time::Duration>,
-    // ) -> Result<(), NvMemoryAdapterError> {
-    //     request(name, subsystem, parameters, self.serial.clone()).await?;
-    //     Ok(())
-    // }
-
     // helper proxy function
-    async fn request_with_reply(
+    async fn request_with_reply<
+        R: CommandRequest + Serialize,
+        Res: CommandResponse + for<'de> Deserialize<'de>,
+    >(
         &self,
-        _name: &str,
-        _subsystem: Subsystem,
-        _parameters: &[(&'static str, ParameterValue)],
-        _timeout: Option<std::time::Duration>,
-    ) -> Result<ParametersValueMap, NvMemoryAdapterError> {
-        // Ok(request_with_reply(
-        //     name,
-        //     subsystem,
-        //     parameters,
-        //     self.serial.clone(),
-        //     self.subscriptions.clone(),
-        //     timeout,
-        // )
-        // .await?)
-        todo!()
+        command: &R,
+        timeout: Option<std::time::Duration>,
+    ) -> Result<Res, NvMemoryAdapterError> {
+        Ok(request_with_reply::<R, S, Res>(
+            &SUnpiPacket::from_command_owned(LenTypeInfo::OneByte, command)?,
+            self.serial.clone(),
+            self.subscriptions.clone(),
+            timeout,
+        )
+        .await?)
     }
 
     pub async fn read_item<I: TryInto<NvItem>>(
         &self,
         id: NvItemId,
     ) -> Result<NvItem, NvMemoryAdapterError> {
-        let r = self
+        let r: OsalNvLengthResponse = self
+            .request_with_reply(&OsalNvLengthRequest { id: id.into() }, None)
+            .await?;
+        let _len = r.length;
+        let r: OsalNvReadResponse = self
             .request_with_reply(
-                "osal_nv_length",
-                Subsystem::Sys,
-                &[("id", ParameterValue::U16(id.into()))],
+                &OsalNvReadRequest {
+                    id: id.into(),
+                    offset: 0,
+                },
                 None,
             )
             .await?;
         println!("r: {:?}", r);
-        let length = r.get(&"length").ok_or(NvMemoryAdapterError::InvalidData)?;
-        if let ParameterValue::U16(_len) = length {
-            let r = self
-                .request_with_reply(
-                    "osal_nv_read",
-                    Subsystem::Sys,
-                    &[
-                        ("id", ParameterValue::U16(id.into())),
-                        ("offset", ParameterValue::U16(0)),
-                    ],
-                    None,
-                )
-                .await?;
-            println!("r: {:?}", r);
-            let status = r
-                .get(&"status")
-                .ok_or(NvMemoryAdapterError::MissingResponse)?;
-            let len = r
-                .get(&"status")
-                .ok_or(NvMemoryAdapterError::MissingResponse)?;
-            let value = r
-                .get(&"value")
-                .ok_or(NvMemoryAdapterError::MissingResponse)?;
-            println!("{:?}, {:?}, {:?}", status, len, value);
-        }
         todo!()
     }
 }

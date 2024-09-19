@@ -7,7 +7,7 @@ use crate::{
     utils::map::MapError,
     zstack::unpi::MAX_PAYLOAD_SIZE,
 };
-use crate::{parameters::ParameterError, serial::SerialThreadError, utils::info};
+use crate::{serial::SerialThreadError, utils::info};
 use futures::{
     channel::oneshot::{self, Receiver, Sender},
     lock::Mutex,
@@ -133,18 +133,11 @@ pub enum UnpiCommandError {
     NoCommandWithName(String),
     InvalidMessageType,
     SubscriptionError,
-    Parameter(ParameterError),
     Serial(SerialThreadError),
     Io(std::io::Error),
     Map(MapError),
     InvalidResponse,
     Bincode,
-}
-
-impl From<ParameterError> for UnpiCommandError {
-    fn from(e: ParameterError) -> Self {
-        UnpiCommandError::Parameter(e)
-    }
 }
 
 impl From<std::io::Error> for UnpiCommandError {

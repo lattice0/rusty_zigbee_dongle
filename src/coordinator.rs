@@ -1,7 +1,6 @@
 use crate::{
-    parameters::{ParameterError, ParameterValue},
     serial::SerialThreadError,
-    utils::map::{MapError, StaticMap},
+    utils::map::MapError,
     zstack::{
         nv_memory::nv_memory::NvMemoryAdapterError,
         unpi::{
@@ -77,43 +76,6 @@ pub struct DeviceInfo {
     pub device_state: u8,
     pub num_assoc_devices: u8,
     pub assoc_devices_list: [u16; 16],
-}
-
-impl TryFrom<StaticMap<15, &'static str, ParameterValue>> for DeviceInfo {
-    type Error = CoordinatorError;
-
-    fn try_from(map: StaticMap<15, &'static str, ParameterValue>) -> Result<Self, Self::Error> {
-        Ok(DeviceInfo {
-            status: map
-                .get(&"status")
-                .ok_or(CoordinatorError::MissingKey)?
-                .try_into_u8()?,
-            ieee_addr: map
-                .get(&"ieee_addr")
-                .ok_or(CoordinatorError::MissingKey)?
-                .try_into_ieee_addr()?,
-            short_addr: map
-                .get(&"short_addr")
-                .ok_or(CoordinatorError::MissingKey)?
-                .try_into_u16()?,
-            device_type: map
-                .get(&"device_type")
-                .ok_or(CoordinatorError::MissingKey)?
-                .try_into_u8()?,
-            device_state: map
-                .get(&"device_state")
-                .ok_or(CoordinatorError::MissingKey)?
-                .try_into_u8()?,
-            num_assoc_devices: map
-                .get(&"num_assoc_devices")
-                .ok_or(CoordinatorError::MissingKey)?
-                .try_into_u8()?,
-            assoc_devices_list: map
-                .get(&"assoc_devices_list")
-                .ok_or(CoordinatorError::MissingKey)?
-                .try_into_list_u16()?,
-        })
-    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -194,7 +156,6 @@ pub enum CoordinatorError {
     SerialRead,
     NoCommandWithName(String),
     Io(String),
-    Parameter(ParameterError),
     InvalidChannel,
     ResponseMismatch,
     Map(MapError),

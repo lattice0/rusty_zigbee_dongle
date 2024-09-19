@@ -1,23 +1,7 @@
 use super::{MessageType, Subsystem};
-use crate::{
-    parameters::{ParameterType, ParameterValue},
-    utils::map::StaticMap,
-};
 use serde::{Deserialize, Serialize};
 
 pub const MAX_COMMAND_SIZE: usize = 15;
-pub type ParametersValueMap = StaticMap<MAX_COMMAND_SIZE, &'static str, ParameterValue>;
-pub type ParametersTypeMap = StaticMap<MAX_COMMAND_SIZE, &'static str, ParameterType>;
-
-#[derive(Debug, PartialEq, Clone)]
-/// Represents a command in the UNPI protocol.
-pub struct Command {
-    pub name: &'static str,
-    pub id: u8,
-    pub command_type: MessageType,
-    pub request: Option<ParametersTypeMap>,
-    pub response: Option<ParametersTypeMap>,
-}
 
 pub trait CommandRequest: std::fmt::Debug {
     type Response: CommandResponse;
