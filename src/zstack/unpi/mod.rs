@@ -2,7 +2,7 @@ use crate::{serial::simple_serial_port::ToSerial, utils::slice_reader::SliceRead
 use commands::{CommandRequest, CommandResponse};
 use deku::{no_std_io, writer::Writer, DekuContainerRead, DekuReader, DekuWriter};
 use log::error;
-use no_std_io::{Seek, Write};
+use no_std_io::Write;
 use serial::UnpiCommandError;
 use std::future::Future;
 
@@ -59,7 +59,7 @@ impl<T: AsRef<[u8]>> std::fmt::Debug for UnpiPacket<T> {
             .field("len", &self.len)
             .field("type_subsystem", &self.type_subsystem)
             .field("command", &self.command)
-            .field("payload", &&self.payload.as_ref()[0..self.len.size()])
+            .field("payload", &&self.payload.as_ref())
             .field("fcs", &self.fcs)
             .finish()
     }
@@ -370,10 +370,11 @@ impl<'a> UnpiPacket<Vec<u8>> {
         let mut w = Writer::new(no_std_io::Cursor::new(&mut payload));
         // deku::DekuWriter::to_writer(command, &mut cursor, ());
         command.to_writer(&mut w, ()).unwrap();
+        let written = (w.bits_written / 8) as usize;
         let h = UnpiPacket {
             len: match len_type_info {
-                LenTypeInfo::OneByte => LenType::OneByte(w.bits_written as u8),
-                LenTypeInfo::TwoByte => LenType::TwoByte(w.bits_written as u16),
+                LenTypeInfo::OneByte => LenType::OneByte(written as u8),
+                LenTypeInfo::TwoByte => LenType::TwoByte(written as u16),
             },
             type_subsystem: (R::message_type(), R::subsystem()),
             command: R::id(),
@@ -410,10 +411,9 @@ impl<'a> UnpiPacket<&'a [u8]> {
         output: &'a mut [u8],
         command: &R,
     ) -> Result<UnpiPacket<&'a [u8]>, std::io::Error> {
-        let original_len = output.len();
-        let mut cursor = Writer::new(no_std_io::Cursor::new(&mut output[..]));
-        deku::DekuWriter::to_writer(command, &mut cursor, ());
-        let written = original_len - cursor.bits_written;
+        let mut w = Writer::new(no_std_io::Cursor::new(&mut output[..]));
+        deku::DekuWriter::to_writer(command, &mut w, ()).unwrap();
+        let written = (w.bits_written / 8) as usize;
         let h = UnpiPacket {
             len: LenType::OneByte(written as u8),
             type_subsystem: (R::message_type(), R::subsystem()),

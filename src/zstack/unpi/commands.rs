@@ -44,7 +44,6 @@ impl<T: Copy + Default> List<T> {
     }
 }
 
-
 #[derive(Debug, PartialEq, Clone, DekuRead, DekuWrite)]
 pub struct CommandIeeeAddress {
     pub ieee_address: [u8; 8],

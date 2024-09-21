@@ -1,5 +1,5 @@
-use std::io::{Read, Seek, Write};
 use deku::{reader::Reader, writer::Writer, DekuError, DekuReader, DekuWriter};
+use std::io::{Read, Seek, Write};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Buffer {

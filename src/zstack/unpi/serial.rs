@@ -15,7 +15,6 @@ use futures::{
     lock::Mutex,
 };
 use serialport::SerialPort;
-use std::io::Cursor;
 use std::sync::Arc;
 
 // reusable request function
@@ -110,7 +109,7 @@ where
         //bincode::serialize_into(&mut payload_buffer_writer, command).unwrap();
         let mut cursor = Writer::new(no_std_io::Cursor::new(&mut payload_buffer[..]));
         deku::DekuWriter::to_writer(command, &mut cursor, ()).unwrap();
-        let written = original_payload_len - cursor.bits_written as usize;
+        let written = original_payload_len - cursor.bits_written / 8 as usize;
         let payload: &[u8] = &payload_buffer[0..written];
         // let h =
         //     UnpiPacket::from_payload((payload, LenTypeInfo::OneByte), type_subsystem, command_id)?;

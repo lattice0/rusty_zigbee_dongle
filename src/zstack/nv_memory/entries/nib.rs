@@ -37,7 +37,7 @@ pub struct Nib {
     pub allocated_end_device_addresses: u32,
     pub node_depth: u8,
     #[deku(endian = "little")]
-    pub extended_panid:[u8; 8],
+    pub extended_panid: [u8; 8],
     pub nwk_key_loaded: u8,
     pub spare1: NwkKeyDescriptor,
     pub spare2: NwkKeyDescriptor,

@@ -81,14 +81,14 @@ impl<'a> DekuContainerRead<'a> for GetDeviceInfoResponse {
             reader.skip_bits(input.1)?;
         }
 
-        let __deku_value = Self::from_reader_with_ctx(reader, ())?;
+        let value = Self::from_reader_with_ctx(reader, ())?;
         let read_whole_byte = (reader.bits_read % 8) == 0;
         let idx = if read_whole_byte {
             reader.bits_read / 8
         } else {
             (reader.bits_read - (reader.bits_read % 8)) / 8
         };
-        Ok(((&input.0[idx..], reader.bits_read % 8), __deku_value))
+        Ok(((&input.0[idx..], reader.bits_read % 8), value))
     }
 }
 
@@ -130,8 +130,7 @@ mod tests {
         let data = [0, 175, 60, 67, 1, 0, 75, 18, 0, 0, 0, 7, 9, 0];
         let mut reader = SliceReader(&data);
         let mut cursor = std::io::Cursor::new(&data);
-        let g =
-            GetDeviceInfoResponse::from_reader((&mut cursor, 0)).unwrap();
+        let g = GetDeviceInfoResponse::from_reader((&mut cursor, 0)).unwrap();
         println!("{:?}", g);
     }
 }
