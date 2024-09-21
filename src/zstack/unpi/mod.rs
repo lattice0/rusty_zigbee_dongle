@@ -370,7 +370,7 @@ impl<'a> UnpiPacket<Vec<u8>> {
         let mut w = Writer::new(no_std_io::Cursor::new(&mut payload));
         // deku::DekuWriter::to_writer(command, &mut cursor, ());
         command.to_writer(&mut w, ()).unwrap();
-        let written = (w.bits_written / 8) as usize;
+        let written = w.bits_written / 8;
         let h = UnpiPacket {
             len: match len_type_info {
                 LenTypeInfo::OneByte => LenType::OneByte(written as u8),
@@ -413,7 +413,7 @@ impl<'a> UnpiPacket<&'a [u8]> {
     ) -> Result<UnpiPacket<&'a [u8]>, std::io::Error> {
         let mut w = Writer::new(no_std_io::Cursor::new(&mut output[..]));
         deku::DekuWriter::to_writer(command, &mut w, ()).unwrap();
-        let written = (w.bits_written / 8) as usize;
+        let written = w.bits_written / 8;
         let h = UnpiPacket {
             len: LenType::OneByte(written as u8),
             type_subsystem: (R::message_type(), R::subsystem()),

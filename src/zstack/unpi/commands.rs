@@ -44,6 +44,13 @@ impl<T: Copy + Default> List<T> {
     }
 }
 
+impl<T: Copy + Default> Default for List<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[allow(non_snake_case)]
 #[derive(Debug, PartialEq, Clone, DekuRead, DekuWrite)]
 pub struct CommandIeeeAddress {
     pub ieee_address: [u8; 8],
@@ -84,12 +91,16 @@ macro_rules! command {
         WithDefaultSerialization
     ) => {
         #[allow(dead_code)]
+        //TODO: deku uses some non_snake_case fields, so we need to suppress the warning. How to fix this?
+        #[allow(non_snake_case)]
         #[derive(Debug, PartialEq, Clone, deku::DekuRead, deku::DekuWrite)]
         pub struct $name {
             $(pub $field: $type ),*
         }
 
         #[allow(dead_code)]
+        //TODO: deku uses some non_snake_case fields, so we need to suppress the warning. How to fix this?
+        #[allow(non_snake_case)]
         #[derive(Debug, PartialEq, Clone, deku::DekuRead, deku::DekuWrite)]
         pub struct $rname {
             $(pub $rfield: $rtype ,)*

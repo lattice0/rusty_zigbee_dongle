@@ -28,7 +28,7 @@ impl<'a> DekuReader<'a, ()> for Buffer {
         Self: Sized,
     {
         let mut output = [0u8; 255];
-        let r = reader.read_bytes(output.len(), &mut output)?;
+        reader.read_bytes(output.len(), &mut output)?;
         Ok(Buffer {
             buffer: output,
             len: output.len(),

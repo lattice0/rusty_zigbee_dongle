@@ -10,7 +10,7 @@ use crate::{
         },
     },
 };
-use deku::{reader::Reader, writer::Writer, DekuError, DekuReader, DekuWrite, DekuWriter};
+use deku::{reader::Reader, writer::Writer, DekuError, DekuReader, DekuWriter};
 use std::{
     future::Future,
     io::{Read, Seek, Write},

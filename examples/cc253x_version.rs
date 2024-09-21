@@ -1,9 +1,6 @@
 //use pasts::Executor;
 use futures::executor::block_on;
-use rusty_zigbee_dongle::{
-    coordinator::{Coordinator, CoordinatorError, LedStatus},
-    zstack::cc253x::CC253X,
-};
+use rusty_zigbee_dongle::{coordinator::Coordinator, zstack::cc253x::CC253X};
 
 fn main() {
     #[cfg(feature = "log")]

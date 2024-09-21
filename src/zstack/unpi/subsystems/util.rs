@@ -95,7 +95,7 @@ impl<'a> DekuContainerRead<'a> for GetDeviceInfoResponse {
 impl DekuWriter<()> for GetDeviceInfoRequest {
     fn to_writer<W: no_std_io::Write + no_std_io::Seek>(
         &self,
-        writer: &mut deku::writer::Writer<W>,
+        _writer: &mut deku::writer::Writer<W>,
         _ctx: (),
     ) -> Result<(), deku::DekuError> {
         Ok(())
@@ -118,19 +118,16 @@ command! {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::slice_reader::SliceReader;
-    use deku::ctx::BitSize;
-    use deku::writer::Writer;
-    use deku::{prelude::*, DekuWriter};
-    use deku::{DekuContainerRead, DekuRead};
-    //use no_std_io::io::{Seek, Write};
+    use deku::DekuContainerRead;
 
     #[test]
     fn test_get_device_info() {
         let data = [0, 175, 60, 67, 1, 0, 75, 18, 0, 0, 0, 7, 9, 0];
-        let mut reader = SliceReader(&data);
-        let mut cursor = std::io::Cursor::new(&data);
-        let g = GetDeviceInfoResponse::from_reader((&mut cursor, 0)).unwrap();
-        println!("{:?}", g);
+        let mut cursor = no_std_io::Cursor::new(&data);
+        let (_, device_response) = GetDeviceInfoResponse::from_reader((&mut cursor, 0)).unwrap();
+        assert_eq!(device_response.status, 0);
+        assert_eq!(device_response.ieee_addr, [175, 60, 67, 1, 0, 75, 18, 0]);
+        assert_eq!(device_response.short_addr, 0);
+        assert_eq!(device_response.device_type, 7);
     }
 }
