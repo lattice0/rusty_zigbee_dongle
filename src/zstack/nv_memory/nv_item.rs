@@ -14,8 +14,8 @@ use crate::{
         SUnpiPacket,
     },
 };
+use deku::{DekuReader, DekuWriter};
 use futures::lock::Mutex;
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 pub struct NvMemoryAdapter<S: SimpleSerial<SUnpiPacket>> {
@@ -35,7 +35,7 @@ impl<S: SimpleSerial<SUnpiPacket>> NvMemoryAdapter<S> {
     }
 
     // helper proxy function
-    pub async fn request<R: CommandRequest + Serialize>(
+    pub async fn request<R: CommandRequest + DekuWriter>(
         &self,
         command: &R,
     ) -> Result<(), NvMemoryAdapterError> {
@@ -63,8 +63,8 @@ impl<S: SimpleSerial<SUnpiPacket>> NvMemoryAdapter<S> {
 
     // helper proxy function
     async fn request_with_reply<
-        R: CommandRequest + Serialize,
-        Res: CommandResponse + for<'de> Deserialize<'de>,
+        R: CommandRequest + DekuWriter,
+        Res: CommandResponse + for<'de> DekuReader<'de>,
     >(
         &self,
         command: &R,

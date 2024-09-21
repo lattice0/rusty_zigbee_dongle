@@ -8,16 +8,17 @@ use crate::{
     zstack::unpi::MAX_PAYLOAD_SIZE,
 };
 use crate::{serial::SerialThreadError, utils::info};
+use deku::{DekuReader, DekuWriter};
 use futures::{
     channel::oneshot::{self, Receiver, Sender},
     lock::Mutex,
 };
-use serde::{Deserialize, Serialize};
 use serialport::SerialPort;
+use std::io::Cursor;
 use std::sync::Arc;
 
 // reusable request function
-pub async fn request<R: CommandRequest + Serialize, S: SimpleSerial<SUnpiPacket>>(
+pub async fn request<R: CommandRequest + DekuWriter, S: SimpleSerial<SUnpiPacket>>(
     packet: &SUnpiPacket,
     serial: Arc<Mutex<S>>,
 ) -> Result<(), UnpiCommandError> {
@@ -26,9 +27,9 @@ pub async fn request<R: CommandRequest + Serialize, S: SimpleSerial<SUnpiPacket>
 }
 
 pub async fn request_with_reply<
-    R: CommandRequest + Serialize,
+    R: CommandRequest + DekuWriter,
     S: SimpleSerial<SUnpiPacket>,
-    Res: CommandResponse + for<'de> Deserialize<'de>,
+    Res: CommandResponse + for<'de> DekuReader<'de>,
 >(
     packet: &SUnpiPacket,
     serial: Arc<Mutex<S>>,
@@ -98,15 +99,16 @@ where
     /// Instantiates a packet from a command and writes it to the serial port
     /// This way we don't have lifetime issues returning the packet referencing the local payload
     #[allow(clippy::needless_borrows_for_generic_args)]
-    pub fn from_command_to_serial<R: CommandRequest + Serialize, S: SerialPort + ?Sized>(
+    pub fn from_command_to_serial<R: CommandRequest + DekuWriter, S: SerialPort + ?Sized>(
         command: &R,
         serial: &mut S,
     ) -> Result<(), CoordinatorError> {
         let mut payload_buffer = [0u8; MAX_PAYLOAD_SIZE];
         let original_payload_len = payload_buffer.len();
-        let mut payload_buffer_writer = &mut payload_buffer[..];
-        bincode::serialize_into(&mut payload_buffer_writer, command).unwrap();
-        let written = original_payload_len - payload_buffer_writer.len();
+        //bincode::serialize_into(&mut payload_buffer_writer, command).unwrap();
+        let mut cursor = Cursor::new(&mut payload_buffer);
+        deku::DekuWriter::to_writer(command, &mut cursor, ()).unwrap();
+        let written = original_payload_len - cursor.position() as usize;
         let payload: &[u8] = &payload_buffer[0..written];
         // let h =
         //     UnpiPacket::from_payload((payload, LenTypeInfo::OneByte), type_subsystem, command_id)?;
@@ -119,7 +121,7 @@ where
     /// This way we don't have lifetime issues returning the packet referencing the local payload
     // TODO: in the future maybe use a proper async serial port library?
     pub async fn from_command_to_serial_async<
-        R: CommandRequest + Serialize,
+        R: CommandRequest + DekuWriter,
         S: SerialPort + ?Sized,
     >(
         command: &R,

@@ -11,7 +11,6 @@ use crate::{
     },
 };
 use deku::{reader::Reader, writer::Writer, DekuError, DekuReader, DekuWrite, DekuWriter};
-use serde::{Deserialize, Serialize};
 use std::{
     future::Future,
     io::{Read, Seek, Write},
@@ -125,32 +124,6 @@ pub enum LedStatus {
 pub enum ResetType {
     Soft,
     Hard,
-}
-
-impl Serialize for ResetType {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        match self {
-            ResetType::Soft => serializer.serialize_u8(1),
-            ResetType::Hard => serializer.serialize_u8(0),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for ResetType {
-    fn deserialize<D>(deserializer: D) -> Result<ResetType, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let value = u8::deserialize(deserializer)?;
-        match value {
-            0 => Ok(ResetType::Hard),
-            1 => Ok(ResetType::Soft),
-            _ => Err(serde::de::Error::custom("Invalid reset type")),
-        }
-    }
 }
 
 impl DekuWriter<()> for ResetType {

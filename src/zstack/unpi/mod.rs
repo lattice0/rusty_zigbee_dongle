@@ -1,9 +1,12 @@
 use crate::{serial::simple_serial_port::ToSerial, utils::slice_reader::SliceReader};
 use commands::{CommandRequest, CommandResponse};
+use deku::{DekuContainerRead, DekuReader, DekuWriter};
 use log::error;
-use serde::{Deserialize, Serialize};
 use serial::UnpiCommandError;
-use std::{future::Future, io::Write};
+use std::{
+    future::Future,
+    io::{Cursor, Write},
+};
 
 pub mod buffer;
 pub mod commands;
@@ -360,12 +363,14 @@ impl<'a> UnpiPacket<Vec<u8>> {
     }
 
     //TODO: cfg alloc
-    pub fn from_command_owned<R: CommandRequest + Serialize>(
+    pub fn from_command_owned<R: CommandRequest + DekuWriter>(
         len_type_info: LenTypeInfo,
         command: &R,
     ) -> Result<UnpiPacket<Vec<u8>>, UnpiCommandError> {
         let mut payload = Vec::new();
-        bincode::serialize_into(&mut payload, command).unwrap();
+        //bincode::serialize_into(&mut payload, command).unwrap();
+        let cursor = Cursor::new(&mut payload);
+        deku::DekuWriter::to_writer(command, cursor, ());
 
         let h = UnpiPacket {
             len: match len_type_info {
@@ -403,13 +408,14 @@ impl<'a> UnpiPacket<&'a [u8]> {
     }
 
     #[allow(clippy::needless_borrows_for_generic_args)]
-    pub fn from_command<R: CommandRequest + Serialize>(
+    pub fn from_command<R: CommandRequest + DekuWriter>(
         mut output: &'a mut [u8],
         command: &R,
     ) -> Result<UnpiPacket<&'a [u8]>, std::io::Error> {
         let original_len = output.len();
-        bincode::serialize_into(&mut output, command).unwrap();
-        let written = original_len - output.len();
+        let cursor = Cursor::new(output);
+        deku::DekuWriter::to_writer(command, cursor, ());
+        let written = original_len - cursor.position() as usize;
         let h = UnpiPacket {
             len: LenType::OneByte(written as u8),
             type_subsystem: (R::message_type(), R::subsystem()),
@@ -432,7 +438,7 @@ impl<'a> UnpiPacket<&'a [u8]> {
     }
 }
 
-impl<T> UnpiPacket<T>
+impl<T: Clone> UnpiPacket<T>
 where
     T: AsRef<[u8]>,
 {
@@ -469,22 +475,25 @@ where
         Ok(Self::checksum_buffer(&output[1..(len - 1)]))
     }
 
-    pub fn to_command_request<'a, R: CommandRequest + Deserialize<'a>>(
+    pub fn to_command_request<'a, Req: CommandRequest + DekuReader<'a> + DekuContainerRead<'a>>(
         &'a self,
-    ) -> Result<R, UnpiCommandError> {
-        let command: R = bincode::deserialize(self.payload.as_ref())
+    ) -> Result<Req, UnpiCommandError> {
+        let mut cursor = Cursor::new(self.payload.clone());
+        let request: Req = Req::from_reader((&mut cursor, 0))
             .inspect_err(|e| error!("to_command_request: {:?}", e))
-            .map_err(|_| UnpiCommandError::Bincode)?;
-        Ok(command)
+            .map_err(|_| UnpiCommandError::Bincode)
+            .unwrap()
+            .1;
+        Ok(request)
     }
 
-    pub fn to_command_response<'a, R: CommandResponse + Deserialize<'a>>(
+    pub fn to_command_response<'a, Res: CommandResponse + DekuReader<'a>>(
         &'a self,
-    ) -> Result<R, UnpiCommandError> {
-        let command: R = bincode::deserialize(self.payload.as_ref())
-            .inspect_err(|e| error!("to_command_response: {:?}", e))
+    ) -> Result<Res, UnpiCommandError> {
+        let response: Res = Res::from_reader(Cursor::new(self.payload.as_ref()))
+            .inspect_err(|e| error!("to_command_request: {:?}", e))
             .map_err(|_| UnpiCommandError::Bincode)?;
-        Ok(command)
+        Ok(response)
     }
 }
 

@@ -1,16 +1,9 @@
-use deku::{ctx::BitSize, no_std_io, reader::Reader, DekuReader};
-use deku::{prelude::*, DekuContainerRead, DekuWriter};
-use serde::{
-    de::{SeqAccess, Visitor},
-    ser::SerializeSeq,
-    Deserialize, Serialize,
-};
-
 use crate::{
     command,
-    utils::wrap_endianess::{WrapEndianess, WrapEndianessVisitor},
     zstack::unpi::{commands::List, MessageType, Subsystem},
 };
+use deku::{ctx::BitSize, no_std_io, reader::Reader, DekuReader};
+use deku::{prelude::*, DekuContainerRead, DekuWriter};
 
 command! {
     0,
@@ -28,77 +21,6 @@ command! {
         assoc_devices_list: List<u16>
     },
     NoDefaultSerialization
-}
-
-impl<'de> Deserialize<'de> for GetDeviceInfoResponse {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        deserializer.deserialize_seq(GetDeviceInfoResponseVisitor)
-    }
-}
-
-struct GetDeviceInfoResponseVisitor;
-
-impl<'de> Visitor<'de> for GetDeviceInfoResponseVisitor {
-    type Value = GetDeviceInfoResponse;
-
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("a seq of 7 elements")
-    }
-
-    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-    where
-        A: SeqAccess<'de>,
-    {
-        println!("a");
-        let status = seq
-            .next_element()?
-            .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
-        println!("status: {:?}", status);
-        println!("size hint: {:?}", seq.size_hint());
-        println!("b");
-        let ieee_addr = WrapEndianess::<'B', [u8; 8]>(seq.next_element::<[u8; 8]>()?.unwrap());
-        let short_addr: u16 = seq
-            .next_element()?
-            .ok_or_else(|| serde::de::Error::invalid_length(2, &self))?;
-        let short_addr = short_addr.to_le();
-        println!("d");
-        let device_type = seq
-            .next_element()?
-            .ok_or_else(|| serde::de::Error::invalid_length(3, &self))?;
-        println!("e");
-        let device_state = seq
-            .next_element()?
-            .ok_or_else(|| serde::de::Error::invalid_length(4, &self))?;
-        println!("f");
-        let num_assoc_devices = seq
-            .next_element()?
-            .ok_or_else(|| serde::de::Error::invalid_length(5, &self))?;
-        println!("g");
-        let mut assoc_devices_list = List {
-            list: [0u16; 255],
-            len: num_assoc_devices as usize,
-        };
-        println!("num_assoc_devices: {:?}", num_assoc_devices);
-        for _ in 0..(num_assoc_devices as usize) {
-            let item: u16 = seq
-                .next_element()?
-                .ok_or_else(|| serde::de::Error::invalid_length(6, &self))?;
-            assoc_devices_list.push(item.to_le());
-        }
-        println!("h");
-        Ok(GetDeviceInfoResponse {
-            status,
-            ieee_addr: ieee_addr.0,
-            short_addr: short_addr,
-            device_type,
-            device_state,
-            num_assoc_devices,
-            assoc_devices_list,
-        })
-    }
 }
 
 impl<'a> DekuReader<'a, ()> for GetDeviceInfoResponse {
@@ -170,13 +92,13 @@ impl<'a> DekuContainerRead<'a> for GetDeviceInfoResponse {
     }
 }
 
-impl Serialize for GetDeviceInfoRequest {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let seq = serializer.serialize_seq(Some(0))?;
-        seq.end()
+impl DekuWriter<()> for GetDeviceInfoRequest {
+    fn to_writer<W: no_std_io::Write + no_std_io::Seek>(
+        &self,
+        writer: &mut deku::writer::Writer<W>,
+        _ctx: (),
+    ) -> Result<(), deku::DekuError> {
+        Ok(())
     }
 }
 
@@ -209,7 +131,7 @@ mod tests {
         let mut reader = SliceReader(&data);
         let mut cursor = std::io::Cursor::new(&data);
         let g =
-            <GetDeviceInfoResponse as DekuContainerRead>::from_reader((&mut cursor, 0)).unwrap();
+            GetDeviceInfoResponse::from_reader((&mut cursor, 0)).unwrap();
         println!("{:?}", g);
     }
 }

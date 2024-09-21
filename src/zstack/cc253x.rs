@@ -30,8 +30,8 @@ use crate::{
         MessageType, SUnpiPacket, Subsystem,
     },
 };
+use deku::{DekuReader, DekuWriter};
 use futures::{executor::block_on, lock::Mutex};
-use serde::{Deserialize, Serialize};
 use std::{ops::Deref, sync::Arc};
 
 //TODO: fix this
@@ -86,7 +86,7 @@ impl CC253X<SimpleSerialPort<SUnpiPacket>> {
 
 impl<S: SimpleSerial<SUnpiPacket>> CC253X<S> {
     // helper proxy function
-    pub async fn request<R: CommandRequest + Serialize>(
+    pub async fn request<R: CommandRequest + DekuWriter>(
         &self,
         command: &R,
     ) -> Result<(), CoordinatorError> {
@@ -114,8 +114,8 @@ impl<S: SimpleSerial<SUnpiPacket>> CC253X<S> {
 
     // helper proxy function
     pub async fn request_with_reply<
-        R: CommandRequest + Serialize,
-        Res: CommandResponse + for<'de> Deserialize<'de>,
+        R: CommandRequest + DekuWriter,
+        Res: CommandResponse + for<'de> DekuReader<'de>,
     >(
         &self,
         command: &R,

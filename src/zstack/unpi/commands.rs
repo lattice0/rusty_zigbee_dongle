@@ -1,6 +1,5 @@
 use super::{MessageType, Subsystem};
 use deku::{DekuRead, DekuWrite};
-use serde::{Deserialize, Serialize};
 
 pub const MAX_COMMAND_SIZE: usize = 15;
 
@@ -45,17 +44,8 @@ impl<T: Copy + Default> List<T> {
     }
 }
 
-//TODO alloc only
-impl<T: Clone + Serialize> Serialize for List<T> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        self.list[..self.len].to_vec().serialize(serializer)
-    }
-}
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, DekuRead, DekuWrite)]
+#[derive(Debug, PartialEq, Clone, DekuRead, DekuWrite)]
 pub struct CommandIeeeAddress {
     pub ieee_address: [u8; 8],
 }
@@ -95,13 +85,13 @@ macro_rules! command {
         WithDefaultSerialization
     ) => {
         #[allow(dead_code)]
-        #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize, deku::DekuRead, deku::DekuWrite)]
+        #[derive(Debug, PartialEq, Clone, deku::DekuRead, deku::DekuWrite)]
         pub struct $name {
             $(pub $field: $type ),*
         }
 
         #[allow(dead_code)]
-        #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+        #[derive(Debug, PartialEq, Clone, deku::DekuRead, deku::DekuWrite)]
         pub struct $rname {
             $(pub $rfield: $rtype ,)*
         }
