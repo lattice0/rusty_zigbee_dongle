@@ -1,5 +1,7 @@
 use deku::DekuRead;
 
+//TODO: non_snake_case because of deku. How to remove/fix?
+#[allow(non_snake_case)]
 #[derive(Debug, DekuRead)]
 pub struct Nib {
     pub sequence_num: u8,
@@ -55,6 +57,8 @@ pub struct Nib {
     pub nwk_update_id: u8,
 }
 
+//TODO: non_snake_case because of deku. How to remove/fix?
+#[allow(non_snake_case)]
 #[derive(Debug, DekuRead)]
 pub struct NwkKeyDescriptor {
     pub key_seq_num: u8,

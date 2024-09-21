@@ -366,10 +366,8 @@ impl<'a> UnpiPacket<Vec<u8>> {
         command: &R,
     ) -> Result<UnpiPacket<Vec<u8>>, UnpiCommandError> {
         let mut payload = Vec::new();
-        // //bincode::serialize_into(&mut payload, command).unwrap();
         let mut w = Writer::new(no_std_io::Cursor::new(&mut payload));
-        // deku::DekuWriter::to_writer(command, &mut cursor, ());
-        command.to_writer(&mut w, ()).unwrap();
+        command.to_writer(&mut w, ())?;
         let written = w.bits_written / 8;
         let h = UnpiPacket {
             len: match len_type_info {
@@ -391,7 +389,7 @@ impl<'a> UnpiPacket<&'a [u8]> {
         (payload, len_type_info): (&'a [u8], LenTypeInfo),
         type_subsystem: (MessageType, Subsystem),
         command: u8,
-    ) -> Result<UnpiPacket<&'a [u8]>, std::io::Error> {
+    ) -> Result<UnpiPacket<&'a [u8]>, UnpiCommandError> {
         let h = UnpiPacket {
             len: match len_type_info {
                 LenTypeInfo::OneByte => LenType::OneByte(payload.len() as u8),
@@ -410,9 +408,9 @@ impl<'a> UnpiPacket<&'a [u8]> {
     pub fn from_command<R: CommandRequest + DekuWriter>(
         output: &'a mut [u8],
         command: &R,
-    ) -> Result<UnpiPacket<&'a [u8]>, std::io::Error> {
+    ) -> Result<UnpiPacket<&'a [u8]>, UnpiCommandError> {
         let mut w = Writer::new(no_std_io::Cursor::new(&mut output[..]));
-        deku::DekuWriter::to_writer(command, &mut w, ()).unwrap();
+        deku::DekuWriter::to_writer(command, &mut w, ())?;
         let written = w.bits_written / 8;
         let h = UnpiPacket {
             len: LenType::OneByte(written as u8),

@@ -106,13 +106,10 @@ where
     ) -> Result<(), CoordinatorError> {
         let mut payload_buffer = [0u8; MAX_PAYLOAD_SIZE];
         let original_payload_len = payload_buffer.len();
-        //bincode::serialize_into(&mut payload_buffer_writer, command).unwrap();
         let mut cursor = Writer::new(no_std_io::Cursor::new(&mut payload_buffer[..]));
-        deku::DekuWriter::to_writer(command, &mut cursor, ()).unwrap();
+        deku::DekuWriter::to_writer(command, &mut cursor, ())?;
         let written = original_payload_len - cursor.bits_written / 8;
         let payload: &[u8] = &payload_buffer[0..written];
-        // let h =
-        //     UnpiPacket::from_payload((payload, LenTypeInfo::OneByte), type_subsystem, command_id)?;
         payload.to_serial(&mut *serial)?;
         info!(">>> {:?}", command);
         Ok(())
@@ -142,6 +139,7 @@ pub enum UnpiCommandError {
     Map(MapError),
     InvalidResponse,
     Bincode,
+    Deku(deku::DekuError),
 }
 
 impl From<std::io::Error> for UnpiCommandError {
@@ -159,5 +157,11 @@ impl From<SerialThreadError> for UnpiCommandError {
 impl From<MapError> for UnpiCommandError {
     fn from(e: MapError) -> Self {
         UnpiCommandError::Map(e)
+    }
+}
+
+impl From<deku::DekuError> for UnpiCommandError {
+    fn from(e: deku::DekuError) -> Self {
+        UnpiCommandError::Deku(e)
     }
 }

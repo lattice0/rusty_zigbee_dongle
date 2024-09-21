@@ -186,6 +186,7 @@ pub enum CoordinatorError {
     UnpiCommand(UnpiCommandError),
     CommandStatusFailure(CommandStatus),
     NoCommandStatus(NoCommandStatusError),
+    Deku(deku::DekuError),
 }
 
 impl From<std::io::Error> for CoordinatorError {
@@ -215,5 +216,11 @@ impl From<UnpiCommandError> for CoordinatorError {
 impl From<NoCommandStatusError> for CoordinatorError {
     fn from(e: NoCommandStatusError) -> Self {
         CoordinatorError::NoCommandStatus(e)
+    }
+}
+
+impl From<DekuError> for CoordinatorError {
+    fn from(e: DekuError) -> Self {
+        CoordinatorError::Deku(e)
     }
 }
