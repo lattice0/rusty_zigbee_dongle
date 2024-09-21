@@ -17,25 +17,17 @@ fn main() {
             .unwrap();
 
         // Not all firmware versions support LED write as far as I understood
-        let a = async {
-            loop {
-                cc2531.set_led(LedStatus::On).await.unwrap();
-                async_delay(std::time::Duration::from_secs(1))
-                    .await
-                    .unwrap();
-                cc2531.set_led(LedStatus::Off).await.unwrap();
-                async_delay(std::time::Duration::from_secs(1))
-                    .await
-                    .unwrap();
-            }
-            Ok::<(), CoordinatorError>(())
-        };
-        let b = async {
-            let version = cc2531.version().await.unwrap();
-            println!("version: {:?}", version);
-            Ok::<(), CoordinatorError>(())
-        };
-        futures::try_join!(a, b)
+        loop {
+            cc2531.set_led(LedStatus::On).await.unwrap();
+            async_delay(std::time::Duration::from_secs(1))
+                .await
+                .unwrap();
+            cc2531.set_led(LedStatus::Off).await.unwrap();
+            async_delay(std::time::Duration::from_secs(1))
+                .await
+                .unwrap();
+        }
+        Ok::<(), CoordinatorError>(())
     };
 
     block_on(f).unwrap();

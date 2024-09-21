@@ -30,7 +30,7 @@ use crate::{
         MessageType, SUnpiPacket, Subsystem,
     },
 };
-use deku::{DekuReader, DekuWriter};
+use deku::{DekuContainerRead, DekuReader, DekuWriter};
 use futures::{executor::block_on, lock::Mutex};
 use std::{ops::Deref, sync::Arc};
 
@@ -115,7 +115,7 @@ impl<S: SimpleSerial<SUnpiPacket>> CC253X<S> {
     // helper proxy function
     pub async fn request_with_reply<
         R: CommandRequest + DekuWriter,
-        Res: CommandResponse + for<'de> DekuReader<'de>,
+        Res: CommandResponse + for<'de> DekuReader<'de> + for<'de> DekuContainerRead<'de>,
     >(
         &self,
         command: &R,

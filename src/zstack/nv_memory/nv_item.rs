@@ -14,7 +14,7 @@ use crate::{
         SUnpiPacket,
     },
 };
-use deku::{DekuReader, DekuWriter};
+use deku::{DekuContainerRead, DekuReader, DekuWriter};
 use futures::lock::Mutex;
 use std::sync::Arc;
 
@@ -64,7 +64,7 @@ impl<S: SimpleSerial<SUnpiPacket>> NvMemoryAdapter<S> {
     // helper proxy function
     async fn request_with_reply<
         R: CommandRequest + DekuWriter,
-        Res: CommandResponse + for<'de> DekuReader<'de>,
+        Res: CommandResponse + for<'de> DekuReader<'de> + for<'de> DekuContainerRead<'de>,
     >(
         &self,
         command: &R,

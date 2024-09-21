@@ -1,12 +1,10 @@
 use crate::{serial::simple_serial_port::ToSerial, utils::slice_reader::SliceReader};
 use commands::{CommandRequest, CommandResponse};
-use deku::{DekuContainerRead, DekuReader, DekuWriter};
+use deku::{no_std_io, writer::Writer, DekuContainerRead, DekuReader, DekuWriter};
 use log::error;
+use no_std_io::{Seek, Write};
 use serial::UnpiCommandError;
-use std::{
-    future::Future,
-    io::{Cursor, Write},
-};
+use std::future::Future;
 
 pub mod buffer;
 pub mod commands;
@@ -368,14 +366,14 @@ impl<'a> UnpiPacket<Vec<u8>> {
         command: &R,
     ) -> Result<UnpiPacket<Vec<u8>>, UnpiCommandError> {
         let mut payload = Vec::new();
-        //bincode::serialize_into(&mut payload, command).unwrap();
-        let cursor = Cursor::new(&mut payload);
-        deku::DekuWriter::to_writer(command, cursor, ());
-
+        // //bincode::serialize_into(&mut payload, command).unwrap();
+        let mut w = Writer::new(no_std_io::Cursor::new(&mut payload));
+        // deku::DekuWriter::to_writer(command, &mut cursor, ());
+        command.to_writer(&mut w, ()).unwrap();
         let h = UnpiPacket {
             len: match len_type_info {
-                LenTypeInfo::OneByte => LenType::OneByte(payload.len() as u8),
-                LenTypeInfo::TwoByte => LenType::TwoByte(payload.len() as u16),
+                LenTypeInfo::OneByte => LenType::OneByte(w.bits_written as u8),
+                LenTypeInfo::TwoByte => LenType::TwoByte(w.bits_written as u16),
             },
             type_subsystem: (R::message_type(), R::subsystem()),
             command: R::id(),
@@ -409,13 +407,13 @@ impl<'a> UnpiPacket<&'a [u8]> {
 
     #[allow(clippy::needless_borrows_for_generic_args)]
     pub fn from_command<R: CommandRequest + DekuWriter>(
-        mut output: &'a mut [u8],
+        output: &'a mut [u8],
         command: &R,
     ) -> Result<UnpiPacket<&'a [u8]>, std::io::Error> {
         let original_len = output.len();
-        let cursor = Cursor::new(output);
-        deku::DekuWriter::to_writer(command, cursor, ());
-        let written = original_len - cursor.position() as usize;
+        let mut cursor = Writer::new(no_std_io::Cursor::new(&mut output[..]));
+        deku::DekuWriter::to_writer(command, &mut cursor, ());
+        let written = original_len - cursor.bits_written;
         let h = UnpiPacket {
             len: LenType::OneByte(written as u8),
             type_subsystem: (R::message_type(), R::subsystem()),
@@ -478,21 +476,23 @@ where
     pub fn to_command_request<'a, Req: CommandRequest + DekuReader<'a> + DekuContainerRead<'a>>(
         &'a self,
     ) -> Result<Req, UnpiCommandError> {
-        let mut cursor = Cursor::new(self.payload.clone());
-        let request: Req = Req::from_reader((&mut cursor, 0))
+        let request: Req = Req::from_bytes((self.payload.as_ref(), 0))
             .inspect_err(|e| error!("to_command_request: {:?}", e))
-            .map_err(|_| UnpiCommandError::Bincode)
-            .unwrap()
+            .map_err(|_| UnpiCommandError::Bincode)?
             .1;
         Ok(request)
     }
 
-    pub fn to_command_response<'a, Res: CommandResponse + DekuReader<'a>>(
+    pub fn to_command_response<
+        'a,
+        Res: CommandResponse + DekuReader<'a> + DekuContainerRead<'a>,
+    >(
         &'a self,
     ) -> Result<Res, UnpiCommandError> {
-        let response: Res = Res::from_reader(Cursor::new(self.payload.as_ref()))
+        let response: Res = Res::from_bytes((self.payload.as_ref(), 0))
             .inspect_err(|e| error!("to_command_request: {:?}", e))
-            .map_err(|_| UnpiCommandError::Bincode)?;
+            .map_err(|_| UnpiCommandError::Bincode)?
+            .1;
         Ok(response)
     }
 }
