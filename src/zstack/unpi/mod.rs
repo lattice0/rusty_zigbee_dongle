@@ -1,5 +1,6 @@
 use crate::{serial::simple_serial_port::ToSerial, utils::slice_reader::SliceReader};
 use commands::{CommandRequest, CommandResponse};
+use log::error;
 use serde::{Deserialize, Serialize};
 use serial::UnpiCommandError;
 use std::{future::Future, io::Write};
@@ -471,16 +472,18 @@ where
     pub fn to_command_request<'a, R: CommandRequest + Deserialize<'a>>(
         &'a self,
     ) -> Result<R, UnpiCommandError> {
-        let command: R =
-            bincode::deserialize(self.payload.as_ref()).map_err(|_| UnpiCommandError::Bincode)?;
+        let command: R = bincode::deserialize(self.payload.as_ref())
+            .inspect_err(|e| error!("to_command_request: {:?}", e))
+            .map_err(|_| UnpiCommandError::Bincode)?;
         Ok(command)
     }
 
     pub fn to_command_response<'a, R: CommandResponse + Deserialize<'a>>(
         &'a self,
     ) -> Result<R, UnpiCommandError> {
-        let command: R =
-            bincode::deserialize(self.payload.as_ref()).map_err(|_| UnpiCommandError::Bincode)?;
+        let command: R = bincode::deserialize(self.payload.as_ref())
+            .inspect_err(|e| error!("to_command_response: {:?}", e))
+            .map_err(|_| UnpiCommandError::Bincode)?;
         Ok(command)
     }
 }

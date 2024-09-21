@@ -10,8 +10,12 @@ use crate::{
         },
     },
 };
+use deku::{reader::Reader, writer::Writer, DekuError, DekuReader, DekuWrite, DekuWriter};
 use serde::{Deserialize, Serialize};
-use std::future::Future;
+use std::{
+    future::Future,
+    io::{Read, Seek, Write},
+};
 
 pub type OnEvent = Box<dyn Fn(ZigbeeEvent) -> Result<(), CoordinatorError> + Send + Sync>;
 
@@ -145,6 +149,39 @@ impl<'de> Deserialize<'de> for ResetType {
             0 => Ok(ResetType::Hard),
             1 => Ok(ResetType::Soft),
             _ => Err(serde::de::Error::custom("Invalid reset type")),
+        }
+    }
+}
+
+impl DekuWriter<()> for ResetType {
+    #[doc = " Write type to bytes"]
+    fn to_writer<W: Write + Seek>(
+        &self,
+        writer: &mut Writer<W>,
+        _ctx: (),
+    ) -> Result<(), DekuError> {
+        match self {
+            ResetType::Soft => writer.write_bytes(&[1u8])?,
+            ResetType::Hard => writer.write_bytes(&[0u8])?,
+        }
+        Ok(())
+    }
+}
+
+impl<'a> DekuReader<'a, ()> for ResetType {
+    fn from_reader_with_ctx<R: Read + Seek>(
+        reader: &mut Reader<R>,
+        _ctx: (),
+    ) -> Result<Self, DekuError>
+    where
+        Self: Sized,
+    {
+        let mut output = [0u8; 1];
+        reader.read_bytes(1, &mut output)?;
+        match output[0] {
+            0 => Ok(ResetType::Hard),
+            1 => Ok(ResetType::Soft),
+            _ => Err(DekuError::Parse("Invalid reset type".into())),
         }
     }
 }

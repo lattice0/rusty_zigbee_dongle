@@ -84,6 +84,21 @@ impl<'a> SliceReader<'a> {
     }
 }
 
+#[derive(Debug)]
+pub enum SliceReadError {
+    Io(std::io::Error),
+    UnexpectedEof,
+}
+
+impl std::fmt::Display for SliceReadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SliceReadError::Io(e) => write!(f, "Io error: {}", e),
+            SliceReadError::UnexpectedEof => write!(f, "Unexpected end of file"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -132,4 +147,14 @@ mod tests {
             [0x04, 0x03, 0x02, 0x01]
         );
     }
+
+    // #[test]
+    // fn s() {
+    //     use serde::de::Deserialize;
+    //     use serde::Deserializer;
+
+    //     let data = [0x01, 0x02, 0x03, 0x04];
+    //     let mut reader = SliceReader(&data);
+    //     let x = u32::deserialize(reader).unwrap();
+    // }
 }

@@ -1,3 +1,6 @@
+use std::io::{Read, Seek, Write};
+
+use deku::{reader::Reader, writer::Writer, DekuError, DekuReader, DekuWriter};
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, PartialEq, Clone)]
@@ -12,6 +15,35 @@ impl<'de> Deserialize<'de> for Buffer {
         D: Deserializer<'de>,
     {
         deserializer.deserialize_struct("Buffer", &["buffer", "len"], BufferVisitor())
+    }
+}
+
+impl DekuWriter<()> for Buffer {
+    #[doc = " Write type to bytes"]
+    fn to_writer<W: Write + Seek>(
+        &self,
+        writer: &mut Writer<W>,
+        _ctx: (),
+    ) -> Result<(), DekuError> {
+        writer.write_bytes(&self.buffer[..self.len])?;
+        Ok(())
+    }
+}
+
+impl<'a> DekuReader<'a, ()> for Buffer {
+    fn from_reader_with_ctx<R: Read + Seek>(
+        reader: &mut Reader<R>,
+        _ctx: (),
+    ) -> Result<Self, DekuError>
+    where
+        Self: Sized,
+    {
+        let mut output = [0u8; 255];
+        let r = reader.read_bytes(output.len(), &mut output)?;
+        Ok(Buffer {
+            buffer: output,
+            len: output.len(),
+        })
     }
 }
 

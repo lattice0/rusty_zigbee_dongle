@@ -1,4 +1,5 @@
 use super::{MessageType, Subsystem};
+use deku::{DekuRead, DekuWrite};
 use serde::{Deserialize, Serialize};
 
 pub const MAX_COMMAND_SIZE: usize = 15;
@@ -25,13 +26,27 @@ pub trait CommandResponse {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct ListU16 {
-    pub list: [u16; 255],
+pub struct List<T> {
+    pub list: [T; 255],
     pub len: usize,
 }
 
+impl<T: Copy + Default> List<T> {
+    pub fn new() -> Self {
+        List {
+            list: [Default::default(); 255],
+            len: 0,
+        }
+    }
+
+    pub fn push(&mut self, item: T) {
+        self.list[self.len] = item;
+        self.len += 1;
+    }
+}
+
 //TODO alloc only
-impl Serialize for ListU16 {
+impl<T: Clone + Serialize> Serialize for List<T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -40,25 +55,7 @@ impl Serialize for ListU16 {
     }
 }
 
-//TODO alloc only
-impl<'de> Deserialize<'de> for ListU16 {
-    fn deserialize<D>(deserializer: D) -> Result<ListU16, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let list: Vec<u16> = Vec::deserialize(deserializer)?;
-        let mut arr = [0; 255];
-        for (i, v) in list.iter().enumerate() {
-            arr[i] = *v;
-        }
-        Ok(ListU16 {
-            list: arr,
-            len: list.len(),
-        })
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, DekuRead, DekuWrite)]
 pub struct CommandIeeeAddress {
     pub ieee_address: [u8; 8],
 }
@@ -97,15 +94,26 @@ macro_rules! command {
         // TryFrom<SliceReader> custom implementation that overrides the default one
         WithDefaultSerialization
     ) => {
+        #[allow(dead_code)]
+        #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize, deku::DekuRead, deku::DekuWrite)]
+        pub struct $name {
+            $(pub $field: $type ),*
+        }
+
+        #[allow(dead_code)]
+        #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+        pub struct $rname {
+            $(pub $rfield: $rtype ,)*
+        }
+
         command!(
             $id,
             $sty,
             $mty,
             struct $name { $( $field : $type ),* },
             struct $rname { $( $rfield : $rtype ),* },
-            NoDefaultSerialization
+            Final
         );
-        // Default reader implementation here
     };
     (
         $id: literal,
@@ -117,11 +125,35 @@ macro_rules! command {
         NoDefaultSerialization
     ) => {
         #[allow(dead_code)]
-        #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+        #[derive(Debug, PartialEq, Clone)]
         pub struct $name {
             $(pub $field: $type ),*
         }
 
+        #[allow(dead_code)]
+        #[derive(Debug, PartialEq, Clone)]
+        pub struct $rname {
+            $(pub $rfield: $rtype ,)*
+        }
+
+        command!(
+            $id,
+            $sty,
+            $mty,
+            struct $name { $( $field : $type ),* },
+            struct $rname { $( $rfield : $rtype ),* },
+            Final
+        );
+    };
+    (
+        $id: literal,
+        $sty: expr,
+        $mty: expr,
+        struct $name:ident { $( $field:ident : $type:ty ),* },
+        struct $rname:ident { $( $rfield:ident : $rtype:ty ),* },
+        // TryFrom<SliceReader> custom implementation that overrides the default one
+        Final
+    ) => {
         impl $crate::zstack::unpi::commands::CommandRequest for $name {
             type Response = $rname;
 
@@ -148,12 +180,6 @@ macro_rules! command {
             fn self_subsystem(&self) -> $crate::zstack::unpi::Subsystem {
                 Self::subsystem()
             }
-        }
-
-        #[allow(dead_code)]
-        #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
-        pub struct $rname {
-            $(pub $rfield: $rtype ,)*
         }
 
         impl $crate::zstack::unpi::commands::CommandResponse for $rname {
