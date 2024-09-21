@@ -1,8 +1,9 @@
 use crate::{
     command,
-    //utils::slice_reader::{ReadWithSliceReader, SliceReader},
-    zstack::unpi::{commands::ListU16, MessageType, Subsystem},
+    zstack::unpi::{commands::List, MessageType, Subsystem},
 };
+use deku::{ctx::BitSize, no_std_io, reader::Reader, DekuReader};
+use deku::{prelude::*, DekuContainerRead, DekuWriter};
 
 command! {
     0,
@@ -17,35 +18,89 @@ command! {
         device_type: u8,
         device_state: u8,
         num_assoc_devices: u8,
-        assoc_devices_list: ListU16
+        assoc_devices_list: List<u16>
     },
     NoDefaultSerialization
 }
 
-// impl<'a> ReadWithSliceReader for GetDeviceInfoResponse {
-//     fn read_with_slice_reader<'b>(reader: SliceReader<'b>) -> Result<Self, std::io::Error> {
-//         let mut reader = reader;
-//         let status = reader.read_u8()?;
-//         let ieee_addr: [u8; 8] = reader.read_u8_array(8)?;
-//         let short_addr = reader.read_u16_le()?;
-//         let device_type = reader.read_u8()?;
-//         let device_state = reader.read_u8()?;
-//         let num_assoc_devices = reader.read_u8()?;
-//         let assoc_devices_list = reader.read_u16_array(num_assoc_devices as usize)?;
-//         Ok(GetDeviceInfoResponse {
-//             status,
-//             ieee_addr,
-//             short_addr,
-//             device_type,
-//             device_state,
-//             num_assoc_devices,
-//             assoc_devices_list: ListU16 {
-//                 list: assoc_devices_list,
-//                 len: num_assoc_devices as usize,
-//             },
-//         })
-//     }
-// }
+impl<'a> DekuReader<'a, ()> for GetDeviceInfoResponse {
+    fn from_reader_with_ctx<R: no_std_io::Read + no_std_io::Seek>(
+        reader: &mut Reader<R>,
+        _ctx: (),
+    ) -> Result<Self, deku::DekuError> {
+        let status = u8::from_reader_with_ctx(reader, BitSize::of::<u8>())?;
+        let ieee_addr = <[u8; 8]>::from_reader_with_ctx(reader, BitSize::of::<[u8; 8]>())?;
+        let short_addr = u16::from_reader_with_ctx(reader, BitSize::of::<u16>())?;
+        let device_type = u8::from_reader_with_ctx(reader, BitSize::of::<u8>())?;
+        let device_state = u8::from_reader_with_ctx(reader, BitSize::of::<u8>())?;
+        let num_assoc_devices = u8::from_reader_with_ctx(reader, BitSize::of::<u8>())?;
+        let mut assoc_devices_list = List {
+            list: [0u16; 255],
+            len: num_assoc_devices as usize,
+        };
+        for _ in 0..(num_assoc_devices as usize) {
+            let item = u16::from_reader_with_ctx(reader, BitSize::of::<u16>())?;
+            assoc_devices_list.push(item);
+        }
+        Ok(GetDeviceInfoResponse {
+            status,
+            ieee_addr,
+            short_addr,
+            device_type,
+            device_state,
+            num_assoc_devices,
+            assoc_devices_list,
+        })
+    }
+}
+
+impl<'a> DekuContainerRead<'a> for GetDeviceInfoResponse {
+    fn from_reader<R: no_std_io::Read + no_std_io::Seek>(
+        input: (&'a mut R, usize),
+    ) -> Result<(usize, Self), DekuError>
+    where
+        Self: Sized,
+    {
+        let reader = &mut deku::reader::Reader::new(input.0);
+        if input.1 != 0 {
+            reader.skip_bits(input.1)?;
+        }
+
+        let value = Self::from_reader_with_ctx(reader, ())?;
+
+        Ok((reader.bits_read, value))
+    }
+
+    fn from_bytes(input: (&'a [u8], usize)) -> Result<((&'a [u8], usize), Self), DekuError>
+    where
+        Self: Sized,
+    {
+        let mut cursor = no_std_io::Cursor::new(input.0);
+        let reader = &mut deku::reader::Reader::new(&mut cursor);
+        if input.1 != 0 {
+            reader.skip_bits(input.1)?;
+        }
+
+        let value = Self::from_reader_with_ctx(reader, ())?;
+        let read_whole_byte = (reader.bits_read % 8) == 0;
+        let idx = if read_whole_byte {
+            reader.bits_read / 8
+        } else {
+            (reader.bits_read - (reader.bits_read % 8)) / 8
+        };
+        Ok(((&input.0[idx..], reader.bits_read % 8), value))
+    }
+}
+
+impl DekuWriter<()> for GetDeviceInfoRequest {
+    fn to_writer<W: no_std_io::Write + no_std_io::Seek>(
+        &self,
+        _writer: &mut deku::writer::Writer<W>,
+        _ctx: (),
+    ) -> Result<(), deku::DekuError> {
+        Ok(())
+    }
+}
 
 command! {
     10,
@@ -58,4 +113,21 @@ command! {
     struct LedControlResponse {
         status: u8
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use deku::DekuContainerRead;
+
+    #[test]
+    fn test_get_device_info() {
+        let data = [0, 175, 60, 67, 1, 0, 75, 18, 0, 0, 0, 7, 9, 0];
+        let mut cursor = no_std_io::Cursor::new(&data);
+        let (_, device_response) = GetDeviceInfoResponse::from_reader((&mut cursor, 0)).unwrap();
+        assert_eq!(device_response.status, 0);
+        assert_eq!(device_response.ieee_addr, [175, 60, 67, 1, 0, 75, 18, 0]);
+        assert_eq!(device_response.short_addr, 0);
+        assert_eq!(device_response.device_type, 7);
+    }
 }

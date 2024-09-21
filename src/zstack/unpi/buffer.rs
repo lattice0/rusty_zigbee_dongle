@@ -1,4 +1,5 @@
-use serde::{de::Visitor, Deserialize, Deserializer, Serialize};
+use deku::{reader::Reader, writer::Writer, DekuError, DekuReader, DekuWriter};
+use std::io::{Read, Seek, Write};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Buffer {
@@ -6,47 +7,31 @@ pub struct Buffer {
     pub len: usize,
 }
 
-impl<'de> Deserialize<'de> for Buffer {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        deserializer.deserialize_struct("Buffer", &["buffer", "len"], BufferVisitor())
+impl DekuWriter<()> for Buffer {
+    #[doc = " Write type to bytes"]
+    fn to_writer<W: Write + Seek>(
+        &self,
+        writer: &mut Writer<W>,
+        _ctx: (),
+    ) -> Result<(), DekuError> {
+        writer.write_bytes(&self.buffer[..self.len])?;
+        Ok(())
     }
 }
 
-pub struct BufferVisitor();
-
-impl<'de> Visitor<'de> for BufferVisitor {
-    type Value = Buffer;
-
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("a byte array")
-    }
-
-    fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E> {
-        let mut buffer = [0; 255];
-        buffer[0..v.len()].copy_from_slice(v);
+impl<'a> DekuReader<'a, ()> for Buffer {
+    fn from_reader_with_ctx<R: Read + Seek>(
+        reader: &mut Reader<R>,
+        _ctx: (),
+    ) -> Result<Self, DekuError>
+    where
+        Self: Sized,
+    {
+        let mut output = [0u8; 255];
+        reader.read_bytes(output.len(), &mut output)?;
         Ok(Buffer {
-            buffer,
-            len: v.len(),
+            buffer: output,
+            len: output.len(),
         })
     }
-}
-
-impl Serialize for Buffer {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let slice = &self.buffer[0..self.len];
-        serializer.serialize_bytes(slice)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-
-    #[test]
-    fn test_deserialize() {}
 }

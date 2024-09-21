@@ -1,8 +1,8 @@
-use serde::Deserialize;
+use deku::DekuRead;
 
-use crate::utils::wrap_endianess::WrapEndianess;
-
-#[derive(Debug, Deserialize)]
+//TODO: non_snake_case because of deku. How to remove/fix?
+#[allow(non_snake_case)]
+#[derive(Debug, DekuRead)]
 pub struct Nib {
     pub sequence_num: u8,
     pub passive_ack_timeout: u8,
@@ -26,7 +26,8 @@ pub struct Nib {
     pub nwk_dev_address: u16,
     pub nwk_logical_channel: u8,
     pub nwk_coord_address: u16,
-    pub nwk_coord_ext_address: WrapEndianess<'L', [u8; 8]>,
+    #[deku(endian = "little")]
+    pub nwk_coord_ext_address: [u8; 8],
     pub nwk_pan_id: u16,
     pub nwk_state: u8,
     pub channel_list: u32,
@@ -37,7 +38,8 @@ pub struct Nib {
     pub allocated_router_addresses: u32,
     pub allocated_end_device_addresses: u32,
     pub node_depth: u8,
-    pub extended_panid: WrapEndianess<'L', [u8; 8]>,
+    #[deku(endian = "little")]
+    pub extended_panid: [u8; 8],
     pub nwk_key_loaded: u8,
     pub spare1: NwkKeyDescriptor,
     pub spare2: NwkKeyDescriptor,
@@ -55,7 +57,9 @@ pub struct Nib {
     pub nwk_update_id: u8,
 }
 
-#[derive(Debug, Deserialize)]
+//TODO: non_snake_case because of deku. How to remove/fix?
+#[allow(non_snake_case)]
+#[derive(Debug, DekuRead)]
 pub struct NwkKeyDescriptor {
     pub key_seq_num: u8,
     pub key: [u8; 16],

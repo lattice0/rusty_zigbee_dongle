@@ -10,8 +10,11 @@ use crate::{
         },
     },
 };
-use serde::{Deserialize, Serialize};
-use std::future::Future;
+use deku::{reader::Reader, writer::Writer, DekuError, DekuReader, DekuWriter};
+use std::{
+    future::Future,
+    io::{Read, Seek, Write},
+};
 
 pub type OnEvent = Box<dyn Fn(ZigbeeEvent) -> Result<(), CoordinatorError> + Send + Sync>;
 
@@ -123,28 +126,35 @@ pub enum ResetType {
     Hard,
 }
 
-impl Serialize for ResetType {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
+impl DekuWriter<()> for ResetType {
+    #[doc = " Write type to bytes"]
+    fn to_writer<W: Write + Seek>(
+        &self,
+        writer: &mut Writer<W>,
+        _ctx: (),
+    ) -> Result<(), DekuError> {
         match self {
-            ResetType::Soft => serializer.serialize_u8(1),
-            ResetType::Hard => serializer.serialize_u8(0),
+            ResetType::Soft => writer.write_bytes(&[1u8])?,
+            ResetType::Hard => writer.write_bytes(&[0u8])?,
         }
+        Ok(())
     }
 }
 
-impl<'de> Deserialize<'de> for ResetType {
-    fn deserialize<D>(deserializer: D) -> Result<ResetType, D::Error>
+impl<'a> DekuReader<'a, ()> for ResetType {
+    fn from_reader_with_ctx<R: Read + Seek>(
+        reader: &mut Reader<R>,
+        _ctx: (),
+    ) -> Result<Self, DekuError>
     where
-        D: serde::Deserializer<'de>,
+        Self: Sized,
     {
-        let value = u8::deserialize(deserializer)?;
-        match value {
+        let mut output = [0u8; 1];
+        reader.read_bytes(1, &mut output)?;
+        match output[0] {
             0 => Ok(ResetType::Hard),
             1 => Ok(ResetType::Soft),
-            _ => Err(serde::de::Error::custom("Invalid reset type")),
+            _ => Err(DekuError::Parse("Invalid reset type".into())),
         }
     }
 }
@@ -176,6 +186,7 @@ pub enum CoordinatorError {
     UnpiCommand(UnpiCommandError),
     CommandStatusFailure(CommandStatus),
     NoCommandStatus(NoCommandStatusError),
+    Deku(deku::DekuError),
 }
 
 impl From<std::io::Error> for CoordinatorError {
@@ -205,5 +216,11 @@ impl From<UnpiCommandError> for CoordinatorError {
 impl From<NoCommandStatusError> for CoordinatorError {
     fn from(e: NoCommandStatusError) -> Self {
         CoordinatorError::NoCommandStatus(e)
+    }
+}
+
+impl From<DekuError> for CoordinatorError {
+    fn from(e: DekuError) -> Self {
+        CoordinatorError::Deku(e)
     }
 }

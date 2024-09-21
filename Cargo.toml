@@ -10,9 +10,8 @@ psila-data  = {git = "https://github.com/blueluna/psila.git", rev = "9b87f44d3ba
 ieee802154  = {version="0.6.1", optional=true}
 futures     = {version="0.3.3", features=["thread-pool"]}
 log         = {version = "0.4.22", default-features = false, optional = true}
-serde       = {version = "1.0.210", features = ["derive"]}
 zstack-proc-macro = {path="./zstack-proc-macro"}
-bincode     = {version = "1.3.3"}
+deku        = "0.18"
 
 
 [dev-dependencies]
